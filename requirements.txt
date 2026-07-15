@@ -1,0 +1,14 @@
+customtkinter>=5.2
+yt-dlp>=2024.1.1
+ffmpeg-python
+Pillow>=10.0
+pillow-heif
+pypdf>=4.0
+pandas
+openpyxl
+pydub
+reportlab
+docx2pdf; sys_platform == "win32"
+py7zr
+pymupdf
+pyin

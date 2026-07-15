@@ -1,0 +1,12 @@
+# Environnements et caches
+.venv/
+__pycache__/
+*.pyc
+
+# Binaires lourds (téléchargés par install.bat)
+bin/
+
+# Artefacts de build PyInstaller
+build/
+dist/
+*.spec.bak
