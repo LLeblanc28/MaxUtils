@@ -11,4 +11,4 @@ reportlab
 docx2pdf; sys_platform == "win32"
 py7zr
 pymupdf
-pyin
+pyinstaller

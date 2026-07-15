@@ -211,4 +211,41 @@ def _convert_pdf_to_images(src: str, target: str, output_dir: str, cb: ProgressC
     dest = unique_path(Path(output_dir) / f"{stem}_images")
     dest.mkdir(parents=True, exist_ok=True)
     for i, page in enumerate(doc):
-        page.get_pixmap(matrix=zoom).save(dest / f"{stem}_page
+        page.get_pixmap(matrix=zoom).save(dest / f"{stem}_page{i + 1:02d}.{ext}")
+        if cb:
+            cb((i + 1) / n, f"Page {i + 1}/{n}")
+    doc.close()
+    return str(dest)
+
+
+# ------------------------------------------------------------------- archives
+def _handle_archive(src: str, target: str, output_dir: str) -> str:
+    """Extrait une archive (ZIP/TAR.GZ/7Z) ou recompresse en ZIP."""
+    src_path = Path(src)
+    ext = src_path.suffix.lower()
+
+    if target == "extraire":
+        dest = unique_path(Path(output_dir) / src_path.stem)
+        dest.mkdir(parents=True, exist_ok=True)
+        if ext == ".zip":
+            with zipfile.ZipFile(src) as z:
+                z.extractall(dest)
+        elif ext in (".gz", ".tar"):
+            with tarfile.open(src) as t:
+                t.extractall(dest, filter="data")
+        elif ext == ".7z":
+            try:
+                import py7zr
+            except ImportError as e:
+                raise RuntimeError("Installez py7zr pour extraire les archives 7z.") from e
+            with py7zr.SevenZipFile(src) as z:
+                z.extractall(dest)
+        else:
+            raise ValueError(f"Archive non supportée : {ext}")
+        return str(dest)
+
+    # Recompression en ZIP du contenu extrait ou du fichier seul
+    out = unique_path(Path(output_dir) / f"{src_path.stem}.zip")
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(src, src_path.name)
+    return str(out)

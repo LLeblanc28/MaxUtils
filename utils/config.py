@@ -78,4 +78,8 @@ def load_config() -> dict:
         return dict(DEFAULT_CONFIG)
 
 
-def save_co
+def save_config(config: dict) -> None:
+    """Sauvegarde la configuration utilisateur sur disque."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
