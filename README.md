@@ -12,7 +12,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-**ffmpeg requis** pour la vidéo/audio : téléchargez-le sur https://www.gyan.dev/ffmpeg/builds/ et ajoutez-le au PATH, ou placez `ffmpeg.exe` + `ffprobe.exe` dans un dossier `bin/` à la racine du projet (détecté automatiquement, et bundlé par PyInstaller).
+**ffmpeg requis** pour la vidéo/audio : téléchargez-le sur https://www.gyan.dev/ffmpeg/builds/ et ajoutez-le au PATH, ou placez `ffmpeg.exe` + `ffprobe.exe` dans un dossier `bin/` (A CRÉE) à la racine du projet (détecté automatiquement, et bundlé par PyInstaller).
 
 ## Build de l'exécutable
 
