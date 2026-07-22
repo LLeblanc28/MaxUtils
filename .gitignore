@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 
+# Rapport de couverture (régénéré à chaque run, cf. .coveragerc)
+.coverage
+
 # Binaires lourds (téléchargés par install.bat)
 bin/
 

@@ -241,7 +241,7 @@ def _is_zip_symlink(info: zipfile.ZipInfo) -> bool:
     return stat.S_ISLNK(mode)
 
 
-def _safe_extract_zip(src: str, dest: Path) -> None:
+def _safe_extract_zip(src: str, dest: Path, max_extracted_size: int = MAX_EXTRACTED_SIZE) -> None:
     with zipfile.ZipFile(src) as z:
         total_uncompressed = 0
         for member in z.infolist():
@@ -249,7 +249,7 @@ def _safe_extract_zip(src: str, dest: Path) -> None:
             if _is_zip_symlink(member):
                 raise SecurityError(f"Lien symbolique refusé dans l'archive : {member.filename}")
             total_uncompressed += member.file_size
-        if total_uncompressed > MAX_EXTRACTED_SIZE:
+        if total_uncompressed > max_extracted_size:
             raise SecurityError("Contenu décompressé trop volumineux (archive suspecte).")
         # Chaque membre a déjà été validé ci-dessus (chemin confiné, pas de lien
         # symbolique) : bandit B202 est un faux positif ici.

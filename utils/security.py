@@ -32,6 +32,10 @@ _FILE_SIGNATURES: dict[str, list[bytes]] = {
     ".pdf": [b"%PDF-"],
     ".zip": [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
     ".7z": [b"7z\xbc\xaf\x27\x1c"],
+    # Valeur non utilisée directement : le WEBP a une signature à deux offsets
+    # (RIFF...WEBP), traitée par la branche dédiée ci-dessous. La présence de
+    # cette clé sert uniquement à ne pas court-circuiter vers `return True`.
+    ".webp": [b"RIFF"],
 }
 
 

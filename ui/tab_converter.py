@@ -29,7 +29,7 @@ class ConverterTab(ctk.CTkFrame):
         top.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
         ctk.CTkButton(top, text="➕ Ajouter des fichiers", command=self._add_files).pack(side="left", padx=5)
         ctk.CTkButton(top, text="🗑 Vider la liste", fg_color="#555",
-                      command=self._clear).pack(side="left", padx=5)
+        command=self._clear).pack(side="left", padx=5)
 
         self.grid_rowconfigure(1, weight=1)
         self.file_list = ctk.CTkScrollableFrame(self, label_text="Fichiers à convertir")

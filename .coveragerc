@@ -1,0 +1,18 @@
+[run]
+# Un `source` mêlant des paquets (core,ui,utils) et un fichier isolé (main.py)
+# fait échouer le suivi de ce dernier dans certaines versions de coverage :
+# on couvre donc tout le répertoire et on exclut explicitement le reste.
+source = .
+omit =
+    tests/*
+    .venv/*
+    build/*
+    dist/*
+    usage_test.py
+    .coveragerc
+
+[report]
+show_missing = True
+fail_under = 100
+exclude_also =
+    if __name__ == .__main__.:
