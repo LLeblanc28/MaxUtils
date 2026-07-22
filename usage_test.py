@@ -123,7 +123,7 @@ class TestFileConverter(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             dummy_video = Path(tmp_dir) / "sample.mp4"
             dummy_video.write_bytes(b"")
-            with patch.object(__import__("core.file_converter"), "get_ffmpeg_path", return_value=None):
+            with patch("core.file_converter.get_ffmpeg_path", return_value=None):
                 with self.assertRaises(RuntimeError):
                     convert_file(str(dummy_video), "mp3", tmp_dir)
 
@@ -141,7 +141,9 @@ class TestFileConverter(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             pdf_file = Path(tmp_dir) / "sample.pdf"
-            canvas.Canvas(str(pdf_file), pagesize=A4).drawString(100, 750, "Test").save()
+            c = canvas.Canvas(str(pdf_file), pagesize=A4)
+            c.drawString(100, 750, "Test")
+            c.save()
             out = convert_file(str(pdf_file), "JPG", tmp_dir)
             self.assertTrue(Path(out).exists())
             self.assertIn(Path(out).suffix.lower(), {".jpg", ".png"})
@@ -160,7 +162,10 @@ class TestFileConverter(unittest.TestCase):
             self.assertTrue(Path(extracted).is_dir())
             self.assertTrue((Path(extracted) / "file.txt").exists())
 
-            zipped = convert_file(str(src), "ZIP", tmp_dir)
+            # "ZIP" comme cible n'est routé vers la recompression que pour les
+            # fichiers de catégorie "archive" (dispatch par extension) : on
+            # réutilise donc zip_path, pas le .txt d'origine (catégorie "document").
+            zipped = convert_file(str(zip_path), "ZIP", tmp_dir)
             self.assertEqual(Path(zipped).suffix.lower(), ".zip")
             self.assertTrue(Path(zipped).exists())
 

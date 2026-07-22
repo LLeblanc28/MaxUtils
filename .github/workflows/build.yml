@@ -1,0 +1,60 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Tests unitaires
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build de l'exécutable Windows
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Récupérer ffmpeg/ffprobe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          $ProgressPreference = "SilentlyContinue"
+          Invoke-WebRequest "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "$env:TEMP\ffmpeg.zip"
+          Expand-Archive "$env:TEMP\ffmpeg.zip" "$env:TEMP\ffmpeg_ext" -Force
+          $b = Get-ChildItem "$env:TEMP\ffmpeg_ext" -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $b.FullName "bin\"
+          Copy-Item (Join-Path $b.DirectoryName "ffprobe.exe") "bin\"
+
+      - name: Build PyInstaller
+        run: pyinstaller build.spec --noconfirm
+
+      - name: Publier l'artefact de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: MultiToolApp-windows
+          path: dist/MultiToolApp.exe
+          if-no-files-found: error
+
+      - name: Créer la release GitHub
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MultiToolApp.exe
+          generate_release_notes: true

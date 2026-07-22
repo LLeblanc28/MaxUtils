@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    # Une CVE peut être publiée sans que le dépôt bouge : réaudit hebdomadaire
+    # des dépendances même sans nouveau commit (lundi 06:00 UTC).
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  workflow_call: # permet à build.yml de réutiliser ce workflow avant de builder
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests unitaires
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lancer la suite de tests
+        run: python -m unittest usage_test tests.test_security -v
+
+  security:
+    name: Analyse de sécurité (bandit + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install bandit pip-audit
+
+      - name: Analyse statique (bandit)
+        # Seuil : échoue sur toute faille de sévérité moyenne ou haute.
+        # Les faux positifs identifiés sont annotés en `# nosec` dans le code,
+        # pas masqués en abaissant ce seuil.
+        run: bandit -r core ui utils main.py -ll
+
+      - name: Audit des dépendances (pip-audit)
+        run: pip-audit -r requirements.txt
