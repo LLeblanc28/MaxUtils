@@ -23,10 +23,29 @@ class TestResourcePathAndFfmpeg(unittest.TestCase):
         self.assertTrue(result.startswith("C:/fake_bundle") or result.startswith("C:\\fake_bundle"))
 
     def test_get_ffmpeg_path_finds_project_bin_folder(self):
-        # bin/ffmpeg.exe existe réellement à la racine du projet.
-        result = config_mod.get_ffmpeg_path()
-        self.assertIsNotNone(result)
-        self.assertTrue(result.endswith("ffmpeg.exe") or result.endswith("ffmpeg"))
+        # bin/ est gitignored (téléchargé par install.bat) : absent sur un
+        # checkout CI propre. On crée un binaire factice pour le test, sans
+        # toucher à un éventuel vrai ffmpeg.exe déjà présent en local.
+        exe_name = "ffmpeg.exe" if config_mod.os.name == "nt" else "ffmpeg"
+        project_root = Path(config_mod.__file__).resolve().parent.parent
+        bin_dir = project_root / "bin"
+        fake_ffmpeg = bin_dir / exe_name
+
+        bin_dir_created = not bin_dir.exists()
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        ffmpeg_already_existed = fake_ffmpeg.exists()
+        if not ffmpeg_already_existed:
+            fake_ffmpeg.write_bytes(b"fake ffmpeg binary for tests")
+
+        try:
+            result = config_mod.get_ffmpeg_path()
+            self.assertIsNotNone(result)
+            self.assertTrue(result.endswith(exe_name))
+        finally:
+            if not ffmpeg_already_existed:
+                fake_ffmpeg.unlink()
+            if bin_dir_created:
+                bin_dir.rmdir()
 
     def test_get_ffmpeg_path_falls_back_to_path_lookup(self):
         with patch.object(config_mod.Path, "is_file", return_value=False), \
