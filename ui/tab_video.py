@@ -9,6 +9,7 @@ from core.video_downloader import CancelledError, VideoDownloader
 from ui.widgets import LogBox
 from utils.config import MP3_BITRATES, MP4_QUALITIES
 from utils.helpers import format_duration, human_size
+from utils.security import SecurityError, validate_url
 
 
 class VideoTab(ctk.CTkFrame):
@@ -97,6 +98,11 @@ class VideoTab(ctk.CTkFrame):
         if not url:
             self.logbox.log("Veuillez saisir une URL.", "error")
             return
+        try:
+            validate_url(url)
+        except SecurityError as e:
+            self.logbox.log(f"⛔ URL refusée : {e}", "error")
+            return
         self.logbox.log("Récupération des informations...")
 
         def worker() -> None:
@@ -105,6 +111,8 @@ class VideoTab(ctk.CTkFrame):
                 text = f"🎬 {info['title']}  —  {format_duration(info['duration'])}"
                 self.after(0, lambda: self.info_label.configure(text=text))
                 self.logbox.log("Informations récupérées.", "success")
+            except SecurityError as e:
+                self.logbox.log(f"⛔ URL refusée : {e}", "error")
             except Exception as e:
                 self.logbox.log(f"Erreur : {e}", "error")
 
@@ -114,6 +122,11 @@ class VideoTab(ctk.CTkFrame):
         url = self.url_entry.get().strip()
         if not url:
             self.logbox.log("Veuillez saisir une URL.", "error")
+            return
+        try:
+            validate_url(url)
+        except SecurityError as e:
+            self.logbox.log(f"⛔ URL refusée : {e}", "error")
             return
         fmt = self.format_var.get()
         quality = self.quality_menu.get()
@@ -139,6 +152,8 @@ class VideoTab(ctk.CTkFrame):
                 self.logbox.log(f"Terminé : {path}", "success")
             except CancelledError:
                 self.logbox.log("Téléchargement annulé.", "error")
+            except SecurityError as e:
+                self.logbox.log(f"⛔ Sécurité : {e}", "error")
             except Exception as e:
                 self.logbox.log(f"Erreur : {e}", "error")
             finally:

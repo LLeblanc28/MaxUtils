@@ -1,14 +1,18 @@
-customtkinter>=5.2
-yt-dlp>=2024.1.1
-ffmpeg-python
-Pillow>=10.0
-pillow-heif
-pypdf>=4.0
-pandas
-openpyxl
-pydub
-reportlab
-docx2pdf; sys_platform == "win32"
-py7zr
-pymupdf
-pyinstaller
+# Versions épinglées (H-03) : limite le risque de supply-chain attack et
+# garantit une installation reproductible. yt-dlp doit être mis à jour
+# régulièrement (les plateformes vidéo changent souvent leurs API) :
+# `pip install --upgrade yt-dlp` puis reporter la version ici.
+customtkinter==6.0.0
+yt-dlp==2026.7.4
+ffmpeg-python==0.2.0
+Pillow==12.3.0
+pillow-heif==1.4.0
+pypdf==6.14.2
+pandas==3.0.3
+openpyxl==3.1.5
+pydub==0.25.1
+reportlab==5.0.0
+docx2pdf==0.1.8; sys_platform == "win32"
+py7zr==1.1.3
+pymupdf==1.28.0
+pyinstaller==6.21.0

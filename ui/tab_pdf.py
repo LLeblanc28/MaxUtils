@@ -9,6 +9,7 @@ import customtkinter as ctk
 from core.pdf_merger import PdfItem, merge_pdfs
 from ui.widgets import LogBox
 from utils.helpers import open_in_explorer
+from utils.security import SecurityError
 
 
 class PdfTab(ctk.CTkFrame):
@@ -96,6 +97,8 @@ class PdfTab(ctk.CTkFrame):
                 item = PdfItem(p)
                 _ = item.num_pages  # valide le fichier
                 self.items.append(item)
+            except SecurityError as e:
+                self.logbox.log(f"⛔ {Path(p).name} refusé (sécurité) : {e}", "error")
             except Exception as e:
                 self.logbox.log(f"PDF invalide {Path(p).name} : {e}", "error")
         self._render_list()
@@ -134,6 +137,8 @@ class PdfTab(ctk.CTkFrame):
                 self.last_output = merge_pdfs(items, output, cb)
                 self.logbox.log(f"PDF généré : {self.last_output}", "success")
                 self.after(0, lambda: self.open_btn.configure(state="normal"))
+            except SecurityError as e:
+                self.logbox.log(f"⛔ Sécurité : {e}", "error")
             except Exception as e:
                 self.logbox.log(f"Erreur de fusion : {e}", "error")
             finally:

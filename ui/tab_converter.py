@@ -9,6 +9,7 @@ import customtkinter as ctk
 from core.file_converter import convert_file, detect_category
 from ui.widgets import LogBox
 from utils.config import TARGETS_BY_CATEGORY
+from utils.security import SecurityError
 
 
 class ConverterTab(ctk.CTkFrame):
@@ -113,6 +114,8 @@ class ConverterTab(ctk.CTkFrame):
                 try:
                     out = convert_file(f, target, dest)
                     self.logbox.log(f"✔ {Path(f).name} → {Path(out).name}", "success")
+                except SecurityError as e:
+                    self.logbox.log(f"⛔ {Path(f).name} refusé (sécurité) : {e}", "error")
                 except Exception as e:
                     self.logbox.log(f"✖ {Path(f).name} : {e}", "error")
                 self.after(0, lambda v=(i + 1) / total: self.progress.set(v))

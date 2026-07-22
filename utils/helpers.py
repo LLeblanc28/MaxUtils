@@ -8,13 +8,19 @@ from pathlib import Path
 
 
 def open_in_explorer(path: str) -> None:
-    """Ouvre un fichier ou dossier avec l'application par défaut du système."""
+    """Révèle un fichier dans l'explorateur système, sans jamais l'exécuter.
+
+    os.startfile() sur un fichier généré ouvrirait/exécuterait directement
+    l'application associée à son extension : pour un fichier de sortie dont
+    le contenu n'est pas garanti (ex: nom dérivé d'une source externe), on
+    se contente de le sélectionner dans l'explorateur (M-03).
+    """
     if platform.system() == "Windows":
-        os.startfile(path)  # type: ignore[attr-defined]
+        subprocess.Popen(["explorer", f"/select,{os.path.normpath(path)}"])
     elif platform.system() == "Darwin":
-        subprocess.Popen(["open", path])
+        subprocess.Popen(["open", "-R", path])
     else:
-        subprocess.Popen(["xdg-open", path])
+        subprocess.Popen(["xdg-open", str(Path(path).parent)])
 
 
 def human_size(num_bytes: float) -> str:

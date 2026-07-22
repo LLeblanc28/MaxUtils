@@ -2,6 +2,7 @@
 tableurs et archives. 100 % local.
 """
 
+import stat
 import subprocess
 import tarfile
 import zipfile
@@ -21,6 +22,11 @@ from utils.config import (
     get_ffmpeg_path,
 )
 from utils.helpers import unique_path
+from utils.security import SecurityError, check_file_size
+
+# Bombe de décompression : refuse une extraction dont le contenu décompressé
+# dépasse cette taille, même si l'archive source est petite.
+MAX_EXTRACTED_SIZE = 5 * 1024**3  # 5 Go
 
 ProgressCb = Callable[[float, str], None] | None
 
@@ -64,7 +70,9 @@ def convert_file(src: str, target_fmt: str, output_dir: str, cb: ProgressCb = No
     Raises:
         ValueError: format non supporté.
         RuntimeError: ffmpeg introuvable ou échec de conversion.
+        SecurityError: fichier source trop volumineux.
     """
+    check_file_size(src)
     category = detect_category(src)
     target = target_fmt.lower()
     if category == "image":
@@ -219,6 +227,48 @@ def _convert_pdf_to_images(src: str, target: str, output_dir: str, cb: ProgressC
 
 
 # ------------------------------------------------------------------- archives
+def _validate_archive_member(name: str, dest: Path) -> None:
+    """Refuse une entrée d'archive dont le chemin s'échapperait de `dest` (Zip Slip)."""
+    target = (dest / name).resolve()
+    try:
+        target.relative_to(dest.resolve())
+    except ValueError:
+        raise SecurityError(f"Chemin d'archive suspect (Zip Slip) : {name}") from None
+
+
+def _is_zip_symlink(info: zipfile.ZipInfo) -> bool:
+    mode = info.external_attr >> 16
+    return stat.S_ISLNK(mode)
+
+
+def _safe_extract_zip(src: str, dest: Path) -> None:
+    with zipfile.ZipFile(src) as z:
+        total_uncompressed = 0
+        for member in z.infolist():
+            _validate_archive_member(member.filename, dest)
+            if _is_zip_symlink(member):
+                raise SecurityError(f"Lien symbolique refusé dans l'archive : {member.filename}")
+            total_uncompressed += member.file_size
+        if total_uncompressed > MAX_EXTRACTED_SIZE:
+            raise SecurityError("Contenu décompressé trop volumineux (archive suspecte).")
+        # Chaque membre a déjà été validé ci-dessus (chemin confiné, pas de lien
+        # symbolique) : bandit B202 est un faux positif ici.
+        z.extractall(dest)  # nosec B202
+
+
+def _safe_extract_7z(src: str, dest: Path):
+    try:
+        import py7zr
+    except ImportError as e:
+        raise RuntimeError("Installez py7zr pour extraire les archives 7z.") from e
+    with py7zr.SevenZipFile(src) as z:
+        for name in z.getnames():
+            _validate_archive_member(name, dest)
+        # Chaque nom d'entrée a déjà été validé ci-dessus : bandit B202 est un
+        # faux positif ici (même raisonnement que _safe_extract_zip).
+        z.extractall(dest)  # nosec B202
+
+
 def _handle_archive(src: str, target: str, output_dir: str) -> str:
     """Extrait une archive (ZIP/TAR.GZ/7Z) ou recompresse en ZIP."""
     src_path = Path(src)
@@ -228,18 +278,14 @@ def _handle_archive(src: str, target: str, output_dir: str) -> str:
         dest = unique_path(Path(output_dir) / src_path.stem)
         dest.mkdir(parents=True, exist_ok=True)
         if ext == ".zip":
-            with zipfile.ZipFile(src) as z:
-                z.extractall(dest)
+            _safe_extract_zip(src, dest)
         elif ext in (".gz", ".tar"):
+            # filter="data" (Python 3.12+) refuse déjà chemins absolus,
+            # liens symboliques et path traversal.
             with tarfile.open(src) as t:
                 t.extractall(dest, filter="data")
         elif ext == ".7z":
-            try:
-                import py7zr
-            except ImportError as e:
-                raise RuntimeError("Installez py7zr pour extraire les archives 7z.") from e
-            with py7zr.SevenZipFile(src) as z:
-                z.extractall(dest)
+            _safe_extract_7z(src, dest)
         else:
             raise ValueError(f"Archive non supportée : {ext}")
         return str(dest)

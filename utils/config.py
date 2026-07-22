@@ -23,6 +23,9 @@ DEFAULT_CONFIG = {
     "output_dir": str(Path.home() / "Downloads"),
 }
 
+VALID_THEMES = {"dark", "light"}
+VALID_LANGUAGES = {"fr", "en"}
+
 # ---------------------------------------------------------------------------
 # Formats supportés par le convertisseur
 # ---------------------------------------------------------------------------
@@ -68,12 +71,31 @@ def get_ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
 
 
+def _validate_config(data: dict) -> dict:
+    """Ne retient que les clés connues, avec des valeurs dans les ensembles autorisés.
+
+    Empêche une clé injectée ou une valeur corrompue dans config.json d'atteindre
+    le reste de l'application (M-04).
+    """
+    result = dict(DEFAULT_CONFIG)
+    if not isinstance(data, dict):
+        return result
+    if data.get("theme") in VALID_THEMES:
+        result["theme"] = data["theme"]
+    if data.get("language") in VALID_LANGUAGES:
+        result["language"] = data["language"]
+    output_dir = data.get("output_dir")
+    if isinstance(output_dir, str) and output_dir.strip():
+        result["output_dir"] = output_dir
+    return result
+
+
 def load_config() -> dict:
     """Charge la configuration utilisateur, avec valeurs par défaut."""
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return {**DEFAULT_CONFIG, **data}
+        return _validate_config(data)
     except (OSError, json.JSONDecodeError):
         return dict(DEFAULT_CONFIG)
 

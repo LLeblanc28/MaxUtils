@@ -11,6 +11,7 @@ from typing import Callable
 import yt_dlp
 
 from utils.config import get_ffmpeg_path
+from utils.security import ensure_within_directory, validate_url
 
 
 class CancelledError(Exception):
@@ -29,8 +30,10 @@ class VideoDownloader:
         """Récupère titre, durée et miniature d'une URL sans télécharger.
 
         Raises:
+            SecurityError: URL pointant vers un hôte local/interne ou un schéma non http(s).
             yt_dlp.utils.DownloadError: URL invalide, vidéo privée, réseau...
         """
+        validate_url(url)
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -68,9 +71,13 @@ class VideoDownloader:
             Chemin du fichier téléchargé.
 
         Raises:
+            SecurityError: URL pointant vers un hôte local/interne ou un schéma non http(s),
+                ou chemin de sortie s'échappant du dossier de destination.
             CancelledError: si annulé par l'utilisateur.
             yt_dlp.utils.DownloadError: erreur réseau ou vidéo indisponible.
         """
+        validate_url(url)
+        output_dir_path = Path(output_dir).resolve()
         self._cancel_event.clear()
         result: dict = {}
 
@@ -90,7 +97,12 @@ class VideoDownloader:
                 result["filepath"] = d.get("filename")
 
         opts: dict = {
-            "outtmpl": str(Path(output_dir) / "%(title)s.%(ext)s"),
+            "outtmpl": "%(title)s.%(ext)s",
+            "paths": {"home": str(output_dir_path)},
+            # Empêche un titre de vidéo malveillant (ex: "../../Windows/System32/x")
+            # d'écrire en dehors du dossier de destination (C-01, path traversal).
+            "restrictfilenames": True,
+            "windowsfilenames": True,
             "progress_hooks": [hook],
             "quiet": True,
             "no_warnings": True,
@@ -122,8 +134,13 @@ class VideoDownloader:
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            path = ydl.prepare_filename(info)
+            filename = Path(ydl.prepare_filename(info)).name
 
         if fmt == "mp3":
-            path = str(Path(path).with_suffix(".mp3"))
-        return result.get("filepath") or path
+            filename = str(Path(filename).with_suffix(".mp3"))
+
+        final_path = result.get("filepath") or str(output_dir_path / filename)
+        # Troisième couche de défense : même si restrictfilenames/paths étaient
+        # contournés par une version future de yt-dlp, le chemin final est
+        # revérifié avant d'être retourné à l'appelant.
+        return str(ensure_within_directory(final_path, output_dir_path))

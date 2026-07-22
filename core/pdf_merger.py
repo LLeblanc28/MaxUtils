@@ -10,6 +10,29 @@ from typing import Callable
 from pypdf import PdfReader, PdfWriter
 
 from utils.helpers import parse_page_ranges, unique_path
+from utils.security import check_file_size
+
+
+def _open_reader(path: str) -> PdfReader:
+    """Ouvre un PDF, en détectant explicitement les fichiers protégés.
+
+    Un PDF chiffré nécessitant un vrai mot de passe est signalé clairement au
+    lieu d'être fusionné silencieusement avec des pages vides/corrompues.
+
+    Raises:
+        SecurityError: fichier trop volumineux.
+        ValueError: PDF protégé par un mot de passe non vide.
+    """
+    check_file_size(path)
+    reader = PdfReader(path)
+    if reader.is_encrypted:
+        result = reader.decrypt("")
+        if not result:
+            raise ValueError(
+                f"Le PDF « {Path(path).name} » est protégé par mot de passe "
+                "et ne peut pas être fusionné."
+            )
+    return reader
 
 
 @dataclass
@@ -29,9 +52,14 @@ class PdfItem:
 
     @property
     def num_pages(self) -> int:
-        """Nombre de pages du PDF (mis en cache après première lecture)."""
+        """Nombre de pages du PDF (mis en cache après première lecture).
+
+        Raises:
+            SecurityError: fichier trop volumineux.
+            ValueError: PDF protégé par un mot de passe non vide.
+        """
         if self._num_pages < 0:
-            self._num_pages = len(PdfReader(self.path).pages)
+            self._num_pages = len(_open_reader(self.path).pages)
         return self._num_pages
 
     @property
@@ -56,7 +84,8 @@ def merge_pdfs(
         Chemin réel du fichier généré.
 
     Raises:
-        ValueError: liste vide ou plage de pages invalide.
+        ValueError: liste vide, plage de pages invalide, ou PDF protégé par mot de passe.
+        SecurityError: fichier source trop volumineux.
     """
     if not items:
         raise ValueError("Aucun fichier PDF à fusionner.")
@@ -65,9 +94,7 @@ def merge_pdfs(
     total = len(items)
 
     for i, item in enumerate(items):
-        reader = PdfReader(item.path)
-        if reader.is_encrypted:
-            reader.decrypt("")  # tente un mot de passe vide
+        reader = _open_reader(item.path)
         indices = parse_page_ranges(item.page_range, len(reader.pages))
         for idx in indices:
             page = reader.pages[idx]
