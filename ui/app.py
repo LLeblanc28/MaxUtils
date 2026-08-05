@@ -7,6 +7,7 @@ import customtkinter as ctk
 
 from ui.tab_converter import ConverterTab
 from ui.tab_pdf import PdfTab
+from ui.tab_pdf_editor import PdfEditorTab
 from ui.tab_video import VideoTab
 from utils.config import (
     APP_NAME,
@@ -53,12 +54,13 @@ class MultiToolApp(ctk.CTk):
         # Onglets
         self.tabview = ctk.CTkTabview(self)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-        for name in ("📥 Vidéo", "🔄 Convertisseur", "📄 PDF"):
+        for name in ("📥 Vidéo", "🔄 Convertisseur", "📄 PDF", "✏️ Éditeur PDF"):
             self.tabview.add(name)
 
         VideoTab(self.tabview.tab("📥 Vidéo"), self).pack(fill="both", expand=True)
         ConverterTab(self.tabview.tab("🔄 Convertisseur"), self).pack(fill="both", expand=True)
         PdfTab(self.tabview.tab("📄 PDF"), self).pack(fill="both", expand=True)
+        PdfEditorTab(self.tabview.tab("✏️ Éditeur PDF"), self).pack(fill="both", expand=True)
 
     # -------------------------------------------------------------- settings
     def _open_settings(self) -> None:

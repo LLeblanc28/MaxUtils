@@ -6,7 +6,34 @@
 
 # 🛠️ MultiToolApp — Convertisseur & Assembleur
 
-Application desktop (CustomTkinter) regroupant : téléchargement vidéo → MP3/MP4 (yt-dlp), conversion de fichiers multi-formats, et assemblage PDF.
+Application desktop (CustomTkinter) regroupant : téléchargement vidéo → MP3/MP4 (yt-dlp), conversion de fichiers multi-formats, assemblage PDF, et édition/annotation de PDF.
+
+## Onglets
+
+| Onglet | Fonctions |
+|---|---|
+| 📥 Vidéo | Téléchargement d'une URL en MP4 (360p → 1080p) ou MP3 (128/192/320 kbps) |
+| 🔄 Convertisseur | Images, vidéo, audio, documents, tableurs, archives |
+| 📄 PDF | Fusion de plusieurs PDF, plages de pages, rotation |
+| ✏️ Éditeur PDF | Texte, signature, formes, flèches, surlignage, filigrane |
+
+## ✏️ Éditeur PDF
+
+Ouvrez un PDF, choisissez un outil dans la palette, puis cliquez (texte) ou glissez (formes) sur l'aperçu de la page. Ce qui est affiché correspond exactement au rendu final : l'aperçu et l'écriture partagent le même repère de coordonnées.
+
+- **Texte** — police (Helvetica / Times / Courier), taille, couleur, gras, italique, souligné
+- **Signature** — tracée à la souris dans une fenêtre dédiée, ou importée depuis une image ; posée dans la zone glissée, fond transparent conservé
+- **Formes** — ligne, flèche (pointe orientée automatiquement), rectangle, ellipse, avec couleur de trait, remplissage, épaisseur et opacité
+- **Surlignage** — rectangle semi-transparent, opacité plafonnée pour que le texte dessous reste lisible
+- **Filigrane** — cochez la case pour apposer un mot (« CONFIDENTIEL » par défaut) en diagonale, centré **sur toutes les pages**. Texte, couleur, taille et intensité réglables.
+
+  Les lettres sont tracées **évidées** : un contour net porte la lisibilité du mot, tandis que l'intérieur, presque transparent, laisse passer le texte du document sans le voiler. Un texte plein, même très pâle, poserait au contraire un voile coloré sur tout ce qu'il recouvre.
+
+  L'aperçu du filigrane est produit par le moteur de rendu lui-même, sur une copie jetable de la page : ce qui est affiché à l'écran est exactement l'image du PDF qui sera écrit.
+
+`↶ Annuler` retire la dernière annotation, `🗑 Tout effacer` les retire toutes. Le fichier source n'est jamais modifié : `💾 Enregistrer sous...` écrit un nouveau PDF (un suffixe `_1`, `_2`… est ajouté si le nom existe déjà).
+
+Les polices utilisées sont les 14 polices standard du format PDF : aucune police n'est embarquée, le fichier reste léger et s'ouvre à l'identique partout.
 
 ## Installation (développement)
 
