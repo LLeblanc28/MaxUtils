@@ -10,7 +10,8 @@ Application desktop (CustomTkinter) regroupant : téléchargement vidéo → MP3
 | 🔄 Convertisseur | Images, vidéo, audio, documents, tableurs, archives ; redimensionnement et compression d'images |
 | 📄 Fusion PDF | Fusion de plusieurs PDF, plages de pages, rotation |
 | ✏️ Éditeur PDF | Texte, signature, formes, flèches, surlignage, filigrane |
-| 🧰 Outils PDF | Découpe/extraction de pages, compression, protection et déverrouillage par mot de passe |
+| 🧰 Outils PDF | Découpe, extraction du texte et des images, numérotation, compression, protection par mot de passe |
+| 🗂️ Organiser | Réordonner, supprimer et pivoter les pages une à une, sur vignettes |
 
 Les fichiers peuvent être **glissés-déposés** dans les onglets Convertisseur, Fusion, Éditeur et Outils. L'interface est disponible en **français et en anglais** (Paramètres → Langue ; le changement s'applique au redémarrage).
 
@@ -29,7 +30,21 @@ Un seul document en entrée, trois opérations :
 - **Compresser** — trois niveaux. Le résultat affiche les tailles avant/après, et signale honnêtement l'absence de gain sur un PDF déjà optimisé.
 - **Protéger / déverrouiller** — chiffrement **AES-256**, avec ou sans autorisation d'impression. Le chiffrement passe par PyMuPDF : l'AES-256 de pypdf exigerait le paquet `cryptography`, et son repli sans cette dépendance est le RC4, un algorithme cassé — inacceptable pour une fonction censée protéger un document.
 
-Un PDF ainsi protégé ne peut pas être fusionné tant qu'il n'est pas déverrouillé ; l'onglet Fusion le signale explicitement plutôt que d'échouer sur une erreur technique.
+- **Extraire le contenu** — le texte vers `.txt` ou `.docx`, et les images **embarquées** dans leur format d'origine (et non un rendu des pages, donc sans perte de qualité). Un PDF sans couche de texte — typiquement un scan — est signalé comme tel plutôt que de produire un fichier vide sans explication.
+- **Numéroter** — six positions, formats `{n}`, `{n} / {total}`, `Page {n} sur {total}`, numéro de départ réglable, page de garde ignorable, plus un en-tête et un pied de page libres.
+
+Un PDF protégé ne peut pas être fusionné tant qu'il n'est pas déverrouillé ; l'onglet Fusion le signale explicitement plutôt que d'échouer sur une erreur technique.
+
+## 🗂️ Organiser
+
+Les pages s'affichent en vignettes, dans l'ordre du fichier qui sera produit. Cliquez sur une page, puis **Reculer / Avancer** pour la déplacer, **Pivoter** par quarts de tour, **Supprimer** pour la retirer. `↩ Réinitialiser` revient à l'état d'origine, et le fichier source n'est jamais modifié.
+
+La rotation s'**ajoute** à celle que porte déjà la page : un document scanné de travers se redresse par un quart de tour, sans repartir de zéro.
+
+## Divers
+
+- **Réglages mémorisés** — formats, qualités et niveaux choisis sont retenus d'une session à l'autre. Ils sont stockés sous leur libellé français, jamais sous celui affiché : un choix fait en anglais reste valide après un passage en français.
+- **Mise à jour de l'application** — Paramètres → « Vérifier les mises à jour » interroge les releases GitHub du projet. Aucune donnée n'est envoyée : la requête ne contient que l'adresse publique du dépôt.
 
 ## ✏️ Éditeur PDF
 
@@ -39,6 +54,7 @@ Ouvrez un PDF, choisissez un outil dans la palette, puis cliquez (texte) ou glis
 - **Signature** — tracée à la souris dans une fenêtre dédiée, ou importée depuis une image ; posée dans la zone glissée, fond transparent conservé
 - **Formes** — ligne, flèche (pointe orientée automatiquement), rectangle, ellipse, avec couleur de trait, remplissage, épaisseur et opacité
 - **Surlignage** — rectangle semi-transparent, opacité plafonnée pour que le texte dessous reste lisible
+- **Caviardage** — ⚠️ à ne pas confondre avec l'outil Rectangle. Un rectangle noir **recouvre** le texte sans le retirer : un copier-coller le restitue intégralement. Le caviardage, lui, **supprime** le contenu de la zone — après enregistrement, la donnée n'est plus ni extractible ni présente dans le fichier. C'est le seul outil à utiliser pour masquer une information sensible ; il se distingue à l'écran par un liseré rouge.
 - **Filigrane** — cochez la case pour apposer un mot (« CONFIDENTIEL » par défaut) en diagonale, centré **sur toutes les pages**. Texte, couleur, taille et intensité réglables.
 
   Les lettres sont tracées **évidées** : un contour net porte la lisibilité du mot, tandis que l'intérieur, presque transparent, laisse passer le texte du document sans le voiler. Un texte plein, même très pâle, poserait au contraire un voile coloré sur tout ce qu'il recouvre.
