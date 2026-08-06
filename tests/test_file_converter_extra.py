@@ -1,5 +1,5 @@
 """Tests complémentaires pour couvrir les branches de core/file_converter.py
-non exercées par usage_test.py (HEIC, media réel, docx, PDF multi-page,
+non exercées par test_usage.py (HEIC, media réel, docx, PDF multi-page,
 archives 7z/tar.gz, cas d'erreur)."""
 
 import sys

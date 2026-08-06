@@ -36,9 +36,9 @@ jobs:
 
       - name: Lancer la suite de tests avec couverture (seuil 100%)
         # Même découverte qu'en local et dans VS Code (.vscode/settings.json) :
-        # un seul passage depuis la racine, motif couvrant test_*.py et *_test.py.
+        # tous les fichiers de tests suivent la convention `test_*.py`.
         run: |
-          coverage run -m unittest discover -s . -p "*test*.py" -v
+          coverage run -m unittest discover -s . -p "test_*.py" -v
           coverage report -m
 
   security:

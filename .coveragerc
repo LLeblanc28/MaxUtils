@@ -8,7 +8,6 @@ omit =
     .venv/*
     build/*
     dist/*
-    usage_test.py
     .coveragerc
 
 [report]

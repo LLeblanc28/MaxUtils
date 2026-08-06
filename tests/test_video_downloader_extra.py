@@ -1,5 +1,5 @@
 """Couvre le hook de progression interne et les branches fmt/quality de
-VideoDownloader.download() non exercées par usage_test.py."""
+VideoDownloader.download() non exercées par test_usage.py."""
 
 import sys
 import tempfile

@@ -1,4 +1,4 @@
-"""Couvre PdfItem.num_pages (jamais appelée directement dans usage_test.py)
+"""Couvre PdfItem.num_pages (jamais appelée directement dans test_usage.py)
 et la branche de rotation de merge_pdfs."""
 
 import sys
