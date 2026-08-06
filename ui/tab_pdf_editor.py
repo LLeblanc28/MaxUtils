@@ -28,6 +28,7 @@ TOOL_LABELS = (
     ("rect", "▭  Rectangle"),
     ("ellipse", "◯  Ellipse"),
     ("highlight", "▬  Surlignage"),
+    ("redact", "██  Caviarder"),
 )
 
 FONT_SIZES = ["8", "10", "12", "14", "18", "24", "32", "48", "64"]
@@ -316,6 +317,14 @@ class PdfEditorTab(ctk.CTkFrame):
                     x0, y0, x1, y1, outline=outline,
                     width=max(1, st.line_width * z),
                     fill=self._hex(st.fill) if st.fill else "",
+                )
+            elif ann.kind == "redact":
+                # Liseré rouge : le caviardage détruit le contenu sous la zone,
+                # contrairement aux autres outils. Le distinguer visuellement
+                # évite de le confondre avec un simple rectangle noir.
+                self.canvas.create_rectangle(
+                    x0, y0, x1, y1, outline="#e05555", width=2,
+                    fill=self._hex(st.fill or (0.0, 0.0, 0.0)),
                 )
             else:  # highlight
                 self.canvas.create_rectangle(

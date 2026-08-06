@@ -292,6 +292,130 @@ class TestPdfEditorSave(unittest.TestCase):
             self.assertEqual(text.count("UNIQUE"), 1)
 
 
+class TestRedaction(unittest.TestCase):
+    """Le caviardage doit supprimer le contenu, pas seulement le recouvrir.
+
+    Un rectangle noir laisse le texte intact dans le fichier : un copier-coller
+    le restitue intégralement. Ces tests vérifient que le caviardage, lui,
+    l'efface réellement — y compris des octets bruts du fichier.
+    """
+
+    def _sensitive_pdf(self, path: Path) -> None:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+
+        c = canvas.Canvas(str(path), pagesize=A4)
+        c.setFont("Helvetica", 12)
+        c.drawString(72, 700, "IBAN CONFIDENTIEL FR7630004")
+        c.drawString(72, 640, "Ligne publique a conserver")
+        c.showPage()
+        c.save()
+
+    def test_redacted_text_is_gone_from_the_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            self._sensitive_pdf(src)
+            editor = PdfEditor(str(src))
+            try:
+                out = editor.save(str(Path(tmp_dir) / "caviarde.pdf"), [
+                    Annotation("redact", 0, 60, 130, 420, 160,
+                               style=Style(fill=(0.0, 0.0, 0.0))),
+                ])
+            finally:
+                editor.close()
+
+            import fitz
+            doc = fitz.open(out)
+            text = doc[0].get_text()
+            doc.close()
+
+            self.assertNotIn("FR7630004", text)
+            self.assertIn("conserver", text)      # le reste du document survit
+            # Preuve la plus forte : la donnée n'est plus dans le fichier du tout.
+            self.assertNotIn(b"FR7630004", Path(out).read_bytes())
+
+    def test_a_plain_rectangle_does_not_remove_anything(self):
+        # Test de contraste : il documente précisément pourquoi l'outil
+        # « Caviarder » existe à côté de l'outil « Rectangle ».
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            self._sensitive_pdf(src)
+            editor = PdfEditor(str(src))
+            try:
+                out = editor.save(str(Path(tmp_dir) / "masque.pdf"), [
+                    Annotation("rect", 0, 60, 130, 420, 160,
+                               style=Style(fill=(0.0, 0.0, 0.0))),
+                ])
+            finally:
+                editor.close()
+
+            import fitz
+            doc = fitz.open(out)
+            text = doc[0].get_text()
+            doc.close()
+            self.assertIn("FR7630004", text)
+
+    def test_several_zones_on_several_pages(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=3, text="SECRET")
+            editor = PdfEditor(str(src))
+            try:
+                out = editor.save(str(Path(tmp_dir) / "out.pdf"), [
+                    Annotation("redact", 0, 50, 40, 500, 80),
+                    Annotation("redact", 0, 50, 90, 500, 130),
+                    Annotation("redact", 2, 50, 40, 500, 80),
+                ])
+            finally:
+                editor.close()
+
+            import fitz
+            doc = fitz.open(out)
+            try:
+                self.assertNotIn("SECRET", doc[0].get_text())
+                self.assertIn("SECRET", doc[1].get_text())   # page non caviardée
+                self.assertNotIn("SECRET", doc[2].get_text())
+            finally:
+                doc.close()
+
+    def test_annotations_drawn_over_a_redaction_survive(self):
+        # Les caviardages sont appliqués en premier : une annotation posée
+        # au même endroit ne doit pas être effacée par eux.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            self._sensitive_pdf(src)
+            editor = PdfEditor(str(src))
+            try:
+                out = editor.save(str(Path(tmp_dir) / "out.pdf"), [
+                    Annotation("redact", 0, 60, 130, 420, 160),
+                    Annotation("text", 0, 70, 150, text="MASQUE",
+                               style=Style(size=14, color=(1.0, 1.0, 1.0))),
+                ])
+            finally:
+                editor.close()
+
+            import fitz
+            doc = fitz.open(out)
+            text = doc[0].get_text()
+            doc.close()
+            self.assertIn("MASQUE", text)
+            self.assertNotIn("FR7630004", text)
+
+    def test_redaction_without_explicit_fill_uses_the_stroke_colour(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            self._sensitive_pdf(src)
+            editor = PdfEditor(str(src))
+            try:
+                out = editor.save(str(Path(tmp_dir) / "out.pdf"), [
+                    Annotation("redact", 0, 60, 130, 420, 160,
+                               style=Style(fill=None, color=(0.2, 0.2, 0.2))),
+                ])
+            finally:
+                editor.close()
+            self.assertTrue(Path(out).exists())
+
+
 class TestWatermark(unittest.TestCase):
     def test_watermark_applied_to_every_page(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

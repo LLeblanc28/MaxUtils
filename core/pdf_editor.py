@@ -50,7 +50,7 @@ COLORS = {
     "Gris": (0.5, 0.5, 0.5),
 }
 
-TOOLS = ("text", "signature", "line", "arrow", "rect", "ellipse", "highlight")
+TOOLS = ("text", "signature", "line", "arrow", "rect", "ellipse", "highlight", "redact")
 
 DEFAULT_WATERMARK_TEXT = "CONFIDENTIEL"
 
@@ -241,8 +241,15 @@ class PdfEditor:
         # résultat, au lieu d'empiler deux fois les annotations.
         doc = fitz.open(self.path)
         try:
-            for ann in annotations or []:
-                if 0 <= ann.page < len(doc):
+            valid = [ann for ann in (annotations or []) if 0 <= ann.page < len(doc)]
+
+            # Les caviardages sont appliqués d'abord, et par page : ils
+            # suppriment réellement le contenu de la zone. Les traiter en
+            # dernier effacerait aussi les annotations dessinées par-dessus.
+            self._apply_redactions(doc, [a for a in valid if a.kind == "redact"])
+
+            for ann in valid:
+                if ann.kind != "redact":
                     self._apply_annotation(doc[ann.page], ann)
 
             if watermark and watermark.enabled:
@@ -255,6 +262,32 @@ class PdfEditor:
         finally:
             doc.close()
         return str(out)
+
+    @staticmethod
+    def _apply_redactions(doc, redactions: list[Annotation]) -> None:
+        """Supprime définitivement le contenu des zones caviardées.
+
+        À la différence d'un rectangle noir, qui se contente de recouvrir, le
+        caviardage retire le texte et les images de la zone : après traitement,
+        un copier-coller ou une extraction ne restituent plus rien. C'est la
+        seule façon honnête de masquer une donnée sensible.
+
+        `apply_redactions()` s'applique à une page entière : les zones sont
+        donc regroupées par page avant d'être exécutées en une passe.
+        """
+        import fitz
+
+        by_page: dict[int, list[Annotation]] = {}
+        for ann in redactions:
+            by_page.setdefault(ann.page, []).append(ann)
+
+        for index, anns in by_page.items():
+            page = doc[index]
+            for ann in anns:
+                x0, y0, x1, y1 = ann.rect
+                page.add_redact_annot(fitz.Rect(x0, y0, x1, y1),
+                                      fill=ann.style.fill or ann.style.color)
+            page.apply_redactions()
 
     def _apply_annotation(self, page, ann: Annotation) -> None:
         """Dessine une annotation sur une page, en routant selon son type."""

@@ -436,6 +436,10 @@ class TestEditorOverlay(_EditorTabTestCase):
             Annotation("ellipse", 0, 50, 440, 250, 520, style=Style(fill=COLORS["Vert"])),
             Annotation("ellipse", 0, 260, 440, 400, 520, style=Style(fill=None)),
             Annotation("highlight", 0, 50, 540, 400, 570, style=Style(fill=COLORS["Jaune"])),
+            # Caviardage : liseré rouge distinct, pour ne pas le confondre avec
+            # un rectangle noir qui, lui, ne supprime rien.
+            Annotation("redact", 0, 50, 580, 300, 610, style=Style(fill=COLORS["Noir"])),
+            Annotation("redact", 0, 320, 580, 500, 610, style=Style(fill=None)),
             Annotation("signature", 0, 350, 600, 500, 660, image_path=str(sig)),
             # Annotation d'une autre page : ne doit pas être dessinée ici.
             Annotation("text", 1, 10, 10, text="Autre page"),
