@@ -369,6 +369,17 @@ class TestExtractText(unittest.TestCase):
             self.assertIn("PAGE NUMERO 1", texts)
             self.assertIn("PAGE NUMERO 2", texts)
 
+    def test_missing_python_docx_gives_an_actionable_message(self):
+        # Une ImportError brute ne dit rien à l'utilisateur : il doit apprendre
+        # quel paquet installer, comme pour pillow-heif ou py7zr.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            with patch.dict(sys.modules, {"docx": None}):
+                with self.assertRaises(RuntimeError) as ctx:
+                    extract_text(str(src), str(Path(tmp_dir) / "texte.docx"))
+            self.assertIn("python-docx", str(ctx.exception))
+
     def test_scanned_pdf_reports_zero_characters(self):
         # Un PDF sans couche de texte doit être signalé comme tel : livrer un
         # fichier vide sans explication laisserait croire à un bug.

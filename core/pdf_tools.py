@@ -269,7 +269,15 @@ def extract_text(src: str, output_path: str, password: str = "") -> tuple[str, i
             f"--- Page {i + 1} ---\n{text}" for i, text in enumerate(pages))
         out.write_text(body, encoding="utf-8")
     else:
-        from docx import Document
+        try:
+            from docx import Document
+        except ImportError as e:
+            # Même traitement que les autres dépendances optionnelles du projet
+            # (pillow-heif, py7zr) : un message actionnable plutôt qu'une
+            # ImportError brute remontée jusqu'à l'utilisateur.
+            raise RuntimeError(
+                "Installez python-docx pour exporter en .docx : pip install python-docx"
+            ) from e
 
         document = Document()
         for i, text in enumerate(pages):
