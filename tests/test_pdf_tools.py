@@ -15,9 +15,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.pdf_tools import (
     COMPRESSION_LEVELS,
+    NUMBER_POSITIONS,
+    add_page_numbers,
     compress_pdf,
+    extract_images,
+    extract_text,
+    organize_pages,
     page_count,
     protect_pdf,
+    render_thumbnail,
     split_pdf,
     unlock_pdf,
 )
@@ -179,6 +185,127 @@ class TestSplitPdf(unittest.TestCase):
             self.assertEqual(page_count(created[0]), 2)
 
 
+class TestOrganizePages(unittest.TestCase):
+    def test_reordering_pages(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=3)
+            out = organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"),
+                                 [(2, 0), (0, 0), (1, 0)])
+            self.assertIn("PAGE NUMERO 3", _text_of(out, 0))
+            self.assertIn("PAGE NUMERO 1", _text_of(out, 1))
+            self.assertIn("PAGE NUMERO 2", _text_of(out, 2))
+
+    def test_deleting_pages_by_omitting_them(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=5)
+            out = organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"),
+                                 [(0, 0), (4, 0)])
+            self.assertEqual(page_count(out), 2)
+            self.assertIn("PAGE NUMERO 5", _text_of(out, 1))
+
+    def test_rotating_a_single_page(self):
+        import fitz
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            out = organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"),
+                                 [(0, 90), (1, 0)])
+            doc = fitz.open(out)
+            try:
+                self.assertEqual(doc[0].rotation, 90)
+                self.assertEqual(doc[1].rotation, 0)
+            finally:
+                doc.close()
+
+    def test_rotation_adds_to_an_already_rotated_page(self):
+        # Une page déjà de travers doit pouvoir être redressée par un quart de
+        # tour supplémentaire, pas repartir de zéro.
+        import fitz
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            tilted = Path(tmp_dir) / "penche.pdf"
+            doc = fitz.open(str(src))
+            doc[0].set_rotation(270)
+            doc.save(str(tilted))
+            doc.close()
+
+            out = organize_pages(str(tilted), str(Path(tmp_dir) / "o.pdf"), [(0, 90)])
+            doc = fitz.open(out)
+            try:
+                self.assertEqual(doc[0].rotation, 0)   # 270 + 90 = 360 → 0
+            finally:
+                doc.close()
+
+    def test_duplicating_a_page(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            out = organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"),
+                                 [(0, 0), (0, 0), (1, 0)])
+            self.assertEqual(page_count(out), 3)
+
+    def test_empty_selection_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            with self.assertRaises(ValueError) as ctx:
+                organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"), [])
+            self.assertIn("au moins une page", str(ctx.exception))
+
+    def test_out_of_range_index_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            with self.assertRaises(ValueError):
+                organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"), [(0, 0), (9, 0)])
+
+    def test_source_is_left_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=3)
+            before = src.read_bytes()
+            organize_pages(str(src), str(Path(tmp_dir) / "o.pdf"), [(2, 180)])
+            self.assertEqual(src.read_bytes(), before)
+
+    def test_works_on_a_protected_document(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            plain, locked = Path(tmp_dir) / "a.pdf", Path(tmp_dir) / "b.pdf"
+            _build_pdf(plain, pages=3)
+            _encrypt(plain, locked)
+            out = organize_pages(str(locked), str(Path(tmp_dir) / "o.pdf"),
+                                 [(1, 0)], password="s3cret")
+            self.assertEqual(page_count(out), 1)
+
+
+class TestRenderThumbnail(unittest.TestCase):
+    def test_produces_a_png_at_the_requested_width(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            png = render_thumbnail(str(src), 1, width=120)
+            self.assertTrue(png.startswith(b"\x89PNG"))
+
+            import io
+            with Image.open(io.BytesIO(png)) as img:
+                self.assertEqual(img.width, 120)
+                self.assertGreater(img.height, img.width)   # A4 est plus haut que large
+
+    def test_thumbnail_of_a_protected_document(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            plain, locked = Path(tmp_dir) / "a.pdf", Path(tmp_dir) / "b.pdf"
+            _build_pdf(plain, pages=1)
+            _encrypt(plain, locked)
+            png = render_thumbnail(str(locked), 0, password="s3cret")
+            self.assertTrue(png.startswith(b"\x89PNG"))
+
+
 class TestCompressPdf(unittest.TestCase):
     def test_every_level_produces_a_readable_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -214,6 +341,213 @@ class TestCompressPdf(unittest.TestCase):
             out, _, _ = compress_pdf(str(locked), str(Path(tmp_dir) / "c.pdf"),
                                      password="s3cret")
             self.assertEqual(page_count(out), 2)
+
+
+class TestExtractText(unittest.TestCase):
+    def test_extraction_to_txt(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=3)
+            out, length = extract_text(str(src), str(Path(tmp_dir) / "texte.txt"))
+
+            content = Path(out).read_text(encoding="utf-8")
+            self.assertIn("PAGE NUMERO 1", content)
+            self.assertIn("PAGE NUMERO 3", content)
+            self.assertIn("--- Page 2 ---", content)   # séparateur entre pages
+            self.assertGreater(length, 0)
+
+    def test_extraction_to_docx(self):
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            out, _ = extract_text(str(src), str(Path(tmp_dir) / "texte.docx"))
+
+            document = Document(out)
+            texts = "\n".join(p.text for p in document.paragraphs)
+            self.assertIn("PAGE NUMERO 1", texts)
+            self.assertIn("PAGE NUMERO 2", texts)
+
+    def test_scanned_pdf_reports_zero_characters(self):
+        # Un PDF sans couche de texte doit être signalé comme tel : livrer un
+        # fichier vide sans explication laisserait croire à un bug.
+        import fitz
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "scan.pdf"
+            doc = fitz.open()
+            doc.new_page()
+            doc.save(str(src))
+            doc.close()
+
+            _out, length = extract_text(str(src), str(Path(tmp_dir) / "vide.txt"))
+            self.assertEqual(length, 0)
+
+    def test_unsupported_output_format_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            with self.assertRaises(ValueError):
+                extract_text(str(src), str(Path(tmp_dir) / "texte.odt"))
+
+    def test_extraction_from_a_protected_document(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            plain, locked = Path(tmp_dir) / "a.pdf", Path(tmp_dir) / "b.pdf"
+            _build_pdf(plain, pages=1)
+            _encrypt(plain, locked)
+            out, length = extract_text(str(locked), str(Path(tmp_dir) / "t.txt"),
+                                       password="s3cret")
+            self.assertGreater(length, 0)
+            self.assertIn("PAGE NUMERO 1", Path(out).read_text(encoding="utf-8"))
+
+
+class TestExtractImages(unittest.TestCase):
+    def _pdf_with_image(self, path: Path, count: int = 1) -> None:
+        import fitz
+        from PIL import Image
+
+        doc = fitz.open()
+        for i in range(count):
+            page = doc.new_page()
+            buffer = Path(str(path) + f".src{i}.png")
+            Image.new("RGB", (120, 90), (30 * (i + 1), 60, 200)).save(buffer)
+            page.insert_image(fitz.Rect(50, 50, 250, 200), filename=str(buffer))
+        doc.save(str(path))
+        doc.close()
+
+    def test_extracts_embedded_images(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            self._pdf_with_image(src, count=2)
+            out_dir = Path(tmp_dir) / "images"
+
+            created = extract_images(str(src), str(out_dir))
+            self.assertEqual(len(created), 2)
+            for path in created:
+                self.assertTrue(Path(path).exists())
+                self.assertGreater(Path(path).stat().st_size, 0)
+
+    def test_a_pdf_without_images_yields_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            self.assertEqual(extract_images(str(src), tmp_dir), [])
+
+    def test_tiny_images_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            self._pdf_with_image(src, count=1)
+            # Seuil démesuré : plus rien ne doit passer.
+            self.assertEqual(
+                extract_images(str(src), tmp_dir, min_size=10_000_000), [])
+
+    def test_an_image_repeated_on_several_pages_is_extracted_once(self):
+        import fitz
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            logo = Path(tmp_dir) / "logo.png"
+            Image.new("RGB", (100, 100), "red").save(logo)
+            src = Path(tmp_dir) / "doc.pdf"
+            doc = fitz.open()
+            for _ in range(3):
+                doc.new_page().insert_image(fitz.Rect(10, 10, 110, 110),
+                                            filename=str(logo))
+            doc.save(str(src))
+            doc.close()
+
+            created = extract_images(str(src), str(Path(tmp_dir) / "out"))
+            self.assertEqual(len(created), 1)
+
+
+class TestAddPageNumbers(unittest.TestCase):
+    def test_numbers_every_page(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=3)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"))
+            for i in range(3):
+                self.assertIn(str(i + 1), _text_of(out, i))
+
+    def test_format_with_total(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=4)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                   number_format="{n} / {total}")
+            self.assertIn("1 / 4", _text_of(out, 0))
+            self.assertIn("4 / 4", _text_of(out, 3))
+
+    def test_start_at_a_chosen_number(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"), start_at=10)
+            self.assertIn("10", _text_of(out, 0))
+            self.assertIn("11", _text_of(out, 1))
+
+    def test_cover_page_can_be_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=3)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                   skip_first=True, number_format="Page {n}")
+            self.assertNotIn("Page ", _text_of(out, 0))
+            # La numérotation reprend à 1 sur la page suivante.
+            self.assertIn("Page 1", _text_of(out, 1))
+            self.assertIn("Page 2", _text_of(out, 2))
+
+    def test_every_position_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            for position in NUMBER_POSITIONS:
+                out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                       position=position)
+                self.assertIn("1", _text_of(out))
+
+    def test_header_and_footer(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=2)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                   header="RAPPORT INTERNE", footer="Diffusion restreinte")
+            text = _text_of(out, 0)
+            self.assertIn("RAPPORT INTERNE", text)
+            self.assertIn("Diffusion restreinte", text)
+
+    def test_header_only_without_numbering(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                   number_format="", header="EN-TETE")
+            self.assertIn("EN-TETE", _text_of(out))
+
+    def test_unknown_position_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            with self.assertRaises(ValueError):
+                add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                 position="Au milieu")
+
+    def test_invalid_format_is_refused_with_a_helpful_message(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            with self.assertRaises(ValueError) as ctx:
+                add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"),
+                                 number_format="Page {numero}")
+            self.assertIn("{n}", str(ctx.exception))
+
+    def test_original_content_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "doc.pdf"
+            _build_pdf(src, pages=1)
+            out = add_page_numbers(str(src), str(Path(tmp_dir) / "n.pdf"))
+            self.assertIn("PAGE NUMERO 1", _text_of(out))
 
 
 class TestProtectAndUnlock(unittest.TestCase):

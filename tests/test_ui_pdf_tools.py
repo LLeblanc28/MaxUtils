@@ -207,6 +207,166 @@ class TestCompressAction(_ToolsTabTestCase):
         self.assertIn("Erreur :", self._log())
 
 
+class TestExtractionActions(_ToolsTabTestCase):
+    def test_extract_text_without_source_warns(self):
+        self.tab._extract_text(".txt")
+        self.assertIn("Choisissez d'abord un PDF", self._log())
+
+    def test_extract_text_cancelled(self):
+        self._load()
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=""):
+            self.tab._extract_text(".txt")
+        self.assertNotIn("caractères", self._log())
+
+    def test_extract_text_to_txt_reports_the_length(self):
+        self._load(pages=3)
+        target = self.tmp_path / "texte.txt"
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=str(target)):
+            self.tab._extract_text(".txt")
+
+        self.assertIn("caractères extraits", self._log())
+        self.assertIn("PAGE NUMERO 1", target.read_text(encoding="utf-8"))
+
+    def test_extract_text_to_docx(self):
+        self._load(pages=1)
+        target = self.tmp_path / "texte.docx"
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=str(target)):
+            self.tab._extract_text(".docx")
+        self.assertTrue(target.exists())
+
+    def test_a_scanned_pdf_is_explained_rather_than_silently_empty(self):
+        import fitz
+
+        scan = self.tmp_path / "scan.pdf"
+        doc = fitz.open()
+        doc.new_page()
+        doc.save(str(scan))
+        doc.close()
+
+        with patch("ui.tab_pdf_tools.filedialog.askopenfilename", return_value=str(scan)):
+            self.tab._pick_source()
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename",
+                   return_value=str(self.tmp_path / "vide.txt")):
+            self.tab._extract_text(".txt")
+        self.assertIn("probablement un scan", self._log())
+
+    def test_extract_images_without_source_warns(self):
+        self.tab._extract_images()
+        self.assertIn("Choisissez d'abord un PDF", self._log())
+
+    def test_extract_images_cancelled(self):
+        self._load()
+        with patch("ui.tab_pdf_tools.filedialog.askdirectory", return_value=""):
+            self.tab._extract_images()
+        self.assertNotIn("image", self._log())
+
+    def test_extract_images_reports_when_there_are_none(self):
+        self._load(pages=2)
+        with patch("ui.tab_pdf_tools.filedialog.askdirectory", return_value=str(self.tmp_path)):
+            self.tab._extract_images()
+        self.assertIn("Aucune image embarquée", self._log())
+
+    def test_extract_images_saves_them(self):
+        import fitz
+        from PIL import Image
+
+        logo = self.tmp_path / "logo.png"
+        Image.new("RGB", (80, 80), "green").save(logo)
+        src = self.tmp_path / "avec_image.pdf"
+        doc = fitz.open()
+        doc.new_page().insert_image(fitz.Rect(20, 20, 120, 120), filename=str(logo))
+        doc.save(str(src))
+        doc.close()
+
+        with patch("ui.tab_pdf_tools.filedialog.askopenfilename", return_value=str(src)):
+            self.tab._pick_source()
+        out_dir = self.tmp_path / "images"
+        with patch("ui.tab_pdf_tools.filedialog.askdirectory", return_value=str(out_dir)):
+            self.tab._extract_images()
+
+        self.assertIn("extraite(s)", self._log())
+        self.assertTrue(list(out_dir.iterdir()))
+
+
+class TestNumberingAction(_ToolsTabTestCase):
+    def test_numbering_without_source_warns(self):
+        self.tab._add_numbers()
+        self.assertIn("Choisissez d'abord un PDF", self._log())
+
+    def test_non_numeric_start_is_refused(self):
+        self._load()
+        self.tab.number_start.insert(0, "dix")
+        self.tab._add_numbers()
+        self.assertIn("nombre entier", self._log())
+
+    def test_numbering_cancelled(self):
+        self._load()
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=""):
+            self.tab._add_numbers()
+        self.assertNotIn("numéroté", self._log())
+
+    def test_numbering_applies_position_format_and_start(self):
+        self._load(pages=3)
+        self.tab.number_format.set("{n} / {total}")
+        self.tab.number_start.insert(0, "5")
+        target = self.tmp_path / "numerote.pdf"
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=str(target)):
+            self.tab._add_numbers()
+
+        self.assertIn("numéroté", self._log())
+        import fitz
+        doc = fitz.open(str(target))
+        try:
+            self.assertIn("5 / 3", doc[0].get_text())
+        finally:
+            doc.close()
+
+    def test_header_and_footer_are_applied(self):
+        self._load(pages=1)
+        self.tab.header_entry.insert(0, "RAPPORT")
+        self.tab.footer_entry.insert(0, "INTERNE")
+        target = self.tmp_path / "entete.pdf"
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=str(target)):
+            self.tab._add_numbers()
+
+        import fitz
+        doc = fitz.open(str(target))
+        try:
+            text = doc[0].get_text()
+        finally:
+            doc.close()
+        self.assertIn("RAPPORT", text)
+        self.assertIn("INTERNE", text)
+
+    def test_cover_page_can_be_skipped(self):
+        self._load(pages=2)
+        self.tab.skip_first.set(True)
+        self.tab.number_format.set("Page {n}")
+        target = self.tmp_path / "couverture.pdf"
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=str(target)):
+            self.tab._add_numbers()
+
+        import fitz
+        doc = fitz.open(str(target))
+        try:
+            self.assertNotIn("Page ", doc[0].get_text())
+            self.assertIn("Page 1", doc[1].get_text())
+        finally:
+            doc.close()
+
+    def test_empty_start_defaults_to_one(self):
+        self._load(pages=1)
+        target = self.tmp_path / "defaut.pdf"
+        with patch("ui.tab_pdf_tools.filedialog.asksaveasfilename", return_value=str(target)):
+            self.tab._add_numbers()
+        import fitz
+        doc = fitz.open(str(target))
+        try:
+            self.assertIn("1", doc[0].get_text())
+        finally:
+            doc.close()
+
+
 class TestProtectAndUnlockActions(_ToolsTabTestCase):
     def test_protect_without_source_warns(self):
         self.tab._protect()
