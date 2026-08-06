@@ -3,6 +3,9 @@
 # régulièrement (les plateformes vidéo changent souvent leurs API) :
 # `pip install --upgrade yt-dlp` puis reporter la version ici.
 customtkinter==6.0.0
+# Glisser-déposer : embarque des binaires natifs (tkdnd). L'application
+# fonctionne sans, le glisser-déposer étant seulement désactivé (cf. ui/dnd.py).
+tkinterdnd2==0.6.2
 yt-dlp==2026.7.4
 ffmpeg-python==0.2.0
 Pillow==12.3.0

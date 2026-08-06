@@ -17,6 +17,15 @@ datas = []
 if os.path.isfile(os.path.join("assets", "icon.ico")):
     datas.append((os.path.join("assets", "icon.ico"), "assets"))
 
+# tkinterdnd2 charge des bibliothèques natives (tkdnd) depuis son dossier de
+# paquet : sans les embarquer, le glisser-déposer serait silencieusement
+# désactivé dans l'exécutable alors qu'il fonctionne depuis les sources.
+try:
+    from PyInstaller.utils.hooks import collect_data_files
+    datas += collect_data_files("tkinterdnd2")
+except Exception:
+    pass
+
 a = Analysis(
     ["main.py"],
     pathex=[],
