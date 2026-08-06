@@ -7,8 +7,10 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from core.pdf_merger import PdfItem, merge_pdfs
+from ui.dnd import register_drop_target
 from ui.widgets import LogBox
 from utils.helpers import open_in_explorer
+from utils.i18n import t
 from utils.security import SecurityError
 
 
@@ -28,27 +30,29 @@ class PdfTab(ctk.CTkFrame):
 
         top = ctk.CTkFrame(self, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        ctk.CTkButton(top, text="➕ Ajouter des PDF", command=self._add_pdfs).pack(side="left", padx=5)
+        ctk.CTkButton(top, text=t("➕ Ajouter des PDF"), command=self._add_pdfs).pack(side="left", padx=5)
 
         self.grid_rowconfigure(1, weight=1)
-        self.list_frame = ctk.CTkScrollableFrame(self, label_text="PDF à fusionner (ordre = ordre de fusion)")
+        self.list_frame = ctk.CTkScrollableFrame(
+            self, label_text=t("PDF à fusionner (ordre = ordre de fusion)  —  ou glissez-les ici"))
         self.list_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        register_drop_target(self.list_frame, self._add_paths)
 
         out = ctk.CTkFrame(self)
         out.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         out.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(out, text="Sortie :").grid(row=0, column=0, padx=8, pady=8)
+        ctk.CTkLabel(out, text=t("Sortie :")).grid(row=0, column=0, padx=8, pady=8)
         self.out_entry = ctk.CTkEntry(out)
         self.out_entry.insert(0, str(Path(self.app.config_data["output_dir"]) / "fusion.pdf"))
         self.out_entry.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
-        ctk.CTkButton(out, text="Parcourir...", width=100, command=self._browse_out)\
+        ctk.CTkButton(out, text=t("Parcourir..."), width=100, command=self._browse_out)\
             .grid(row=0, column=2, padx=8, pady=8)
 
         actions = ctk.CTkFrame(self, fg_color="transparent")
         actions.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
-        self.merge_btn = ctk.CTkButton(actions, text="Fusionner", command=self._merge)
+        self.merge_btn = ctk.CTkButton(actions, text=t("Fusionner"), command=self._merge)
         self.merge_btn.pack(side="left", padx=5)
-        self.open_btn = ctk.CTkButton(actions, text="Ouvrir le fichier généré",
+        self.open_btn = ctk.CTkButton(actions, text=t("Ouvrir le fichier généré"),
                                       state="disabled", fg_color="#2e7d32", command=self._open_result)
         self.open_btn.pack(side="left", padx=5)
 
@@ -91,16 +95,21 @@ class PdfTab(ctk.CTkFrame):
 
     # ------------------------------------------------------------- handlers
     def _add_pdfs(self) -> None:
-        paths = filedialog.askopenfilenames(filetypes=[("PDF", "*.pdf")])
+        self._add_paths(filedialog.askopenfilenames(filetypes=[("PDF", "*.pdf")]))
+
+    def _add_paths(self, paths) -> None:
+        """Ajoute des PDF à la liste, qu'ils viennent du sélecteur ou d'un dépôt."""
         for p in paths:
             try:
                 item = PdfItem(p)
                 _ = item.num_pages  # valide le fichier
                 self.items.append(item)
             except SecurityError as e:
-                self.logbox.log(f"⛔ {Path(p).name} refusé (sécurité) : {e}", "error")
+                self.logbox.log(t("⛔ {name} refusé (sécurité) : {error}").format(
+                    name=Path(p).name, error=e), "error")
             except Exception as e:
-                self.logbox.log(f"PDF invalide {Path(p).name} : {e}", "error")
+                self.logbox.log(t("PDF invalide {name} : {error}").format(
+                    name=Path(p).name, error=e), "error")
         self._render_list()
 
     def _move(self, index: int, delta: int) -> None:
@@ -121,7 +130,7 @@ class PdfTab(ctk.CTkFrame):
 
     def _merge(self) -> None:
         if not self.items:
-            self.logbox.log("Ajoutez au moins un PDF.", "error")
+            self.logbox.log(t("Ajoutez au moins un PDF."), "error")
             return
         output = self.out_entry.get().strip()
         self.merge_btn.configure(state="disabled")
@@ -135,12 +144,12 @@ class PdfTab(ctk.CTkFrame):
         def worker() -> None:
             try:
                 self.last_output = merge_pdfs(items, output, cb)
-                self.logbox.log(f"PDF généré : {self.last_output}", "success")
+                self.logbox.log(t("PDF généré : {path}").format(path=self.last_output), "success")
                 self.after(0, lambda: self.open_btn.configure(state="normal"))
             except SecurityError as e:
-                self.logbox.log(f"⛔ Sécurité : {e}", "error")
+                self.logbox.log(t("⛔ Sécurité : {error}").format(error=e), "error")
             except Exception as e:
-                self.logbox.log(f"Erreur de fusion : {e}", "error")
+                self.logbox.log(t("Erreur de fusion : {error}").format(error=e), "error")
             finally:
                 self.after(0, lambda: self.merge_btn.configure(state="normal"))
 

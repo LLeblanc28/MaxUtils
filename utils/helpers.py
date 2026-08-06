@@ -56,6 +56,35 @@ def unique_path(path: str | Path) -> Path:
         i += 1
 
 
+def parse_timecode(value: str) -> float | None:
+    """Convertit un horodatage saisi par l'utilisateur en secondes.
+
+    Accepte « 90 », « 1:30 » et « 01:02:03 ». Une chaîne vide signifie
+    « pas de borne » et retourne None, ce que l'appelant distingue de 0.
+
+    Raises:
+        ValueError: format non reconnu ou valeur négative.
+    """
+    value = value.strip()
+    if not value:
+        return None
+
+    parts = value.split(":")
+    if len(parts) > 3:
+        raise ValueError(f"Horodatage invalide : {value} (attendu mm:ss ou hh:mm:ss)")
+    try:
+        numbers = [float(p) for p in parts]
+    except ValueError:
+        raise ValueError(f"Horodatage invalide : {value} (attendu mm:ss ou hh:mm:ss)") from None
+    if any(n < 0 for n in numbers):
+        raise ValueError(f"Horodatage négatif : {value}")
+
+    total = 0.0
+    for number in numbers:
+        total = total * 60 + number
+    return total
+
+
 def parse_page_ranges(spec: str, max_pages: int) -> list[int]:
     """Convertit une spécification de pages ('1-3,5,7-9') en liste d'index 0-based.
 

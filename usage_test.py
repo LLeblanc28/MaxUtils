@@ -255,8 +255,9 @@ class TestVideoDownloader(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             with patch("core.video_downloader.yt_dlp.YoutubeDL", return_value=ydl_context), patch("core.video_downloader.get_ffmpeg_path", return_value=str(Path(tmp_dir) / "ffmpeg")):
-                out_path = VideoDownloader().download("https://example.com", tmp_dir, fmt="mp4")
-        self.assertTrue(out_path.endswith(".mp4"))
+                out_paths = VideoDownloader().download("https://example.com", tmp_dir, fmt="mp4")
+        self.assertEqual(len(out_paths), 1)
+        self.assertTrue(out_paths[0].endswith(".mp4"))
 
     def test_download_raises_cancelled_error_when_cancelled(self):
         ydl_instance = MagicMock()

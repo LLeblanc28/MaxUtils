@@ -12,10 +12,30 @@ Application desktop (CustomTkinter) regroupant : téléchargement vidéo → MP3
 
 | Onglet | Fonctions |
 |---|---|
-| 📥 Vidéo | Téléchargement d'une URL en MP4 (360p → 1080p) ou MP3 (128/192/320 kbps) |
-| 🔄 Convertisseur | Images, vidéo, audio, documents, tableurs, archives |
-| 📄 PDF | Fusion de plusieurs PDF, plages de pages, rotation |
+| 📥 Vidéo | Téléchargement d'une URL en MP4 (360p → 1080p) ou MP3 (128/192/320 kbps), playlists, sous-titres, extraction d'un passage |
+| 🔄 Convertisseur | Images, vidéo, audio, documents, tableurs, archives ; redimensionnement et compression d'images |
+| 📄 Fusion PDF | Fusion de plusieurs PDF, plages de pages, rotation |
 | ✏️ Éditeur PDF | Texte, signature, formes, flèches, surlignage, filigrane |
+| 🧰 Outils PDF | Découpe/extraction de pages, compression, protection et déverrouillage par mot de passe |
+
+Les fichiers peuvent être **glissés-déposés** dans les onglets Convertisseur, Fusion, Éditeur et Outils. L'interface est disponible en **français et en anglais** (Paramètres → Langue ; le changement s'applique au redémarrage).
+
+## 📥 Vidéo
+
+- **Playlists** — cochez « Toute la playlist » pour télécharger la liste entière. Chaque fichier est préfixé de son numéro d'ordre, ce qui préserve l'ordre et évite qu'un titre en double n'en écrase un autre.
+- **Sous-titres** — français, anglais, espagnol, allemand ou italien. Les sous-titres générés automatiquement sont inclus, faute de quoi l'option resterait sans effet sur la majorité des vidéos.
+- **Extrait** — indiquez un début et une fin (`1:20`, `01:02:03`) pour ne récupérer qu'un passage. La découpe est alignée sur les images-clés, sans quoi l'extrait déborderait de plusieurs secondes.
+- **Mise à jour de yt-dlp** — bouton dans les paramètres. C'est la seule dépendance qui se périme vite : les plateformes changent leurs API régulièrement, et une version figée finit par ne plus rien télécharger.
+
+## 🧰 Outils PDF
+
+Un seul document en entrée, trois opérations :
+
+- **Découper / extraire** — un fichier unique contenant les pages choisies (`1-3,7`), ou un fichier par page.
+- **Compresser** — trois niveaux. Le résultat affiche les tailles avant/après, et signale honnêtement l'absence de gain sur un PDF déjà optimisé.
+- **Protéger / déverrouiller** — chiffrement **AES-256**, avec ou sans autorisation d'impression. Le chiffrement passe par PyMuPDF : l'AES-256 de pypdf exigerait le paquet `cryptography`, et son repli sans cette dépendance est le RC4, un algorithme cassé — inacceptable pour une fonction censée protéger un document.
+
+Un PDF ainsi protégé ne peut pas être fusionné tant qu'il n'est pas déverrouillé ; l'onglet Fusion le signale explicitement plutôt que d'échouer sur une erreur technique.
 
 ## ✏️ Éditeur PDF
 

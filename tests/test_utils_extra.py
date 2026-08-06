@@ -97,6 +97,39 @@ class TestHumanSizeAndUniquePath(unittest.TestCase):
             self.assertEqual(result.name, "file_2.txt")
 
 
+class TestParseTimecode(unittest.TestCase):
+    def test_plain_seconds(self):
+        self.assertEqual(helpers.parse_timecode("90"), 90)
+
+    def test_minutes_and_seconds(self):
+        self.assertEqual(helpers.parse_timecode("1:30"), 90)
+
+    def test_hours_minutes_seconds(self):
+        self.assertEqual(helpers.parse_timecode("01:02:03"), 3723)
+
+    def test_empty_means_no_bound(self):
+        self.assertIsNone(helpers.parse_timecode(""))
+        self.assertIsNone(helpers.parse_timecode("   "))
+
+    def test_zero_is_a_real_bound_not_absence(self):
+        # 0 et None ne doivent pas être confondus : « depuis le début » est une
+        # borne explicite, « pas de borne » n'en est pas une.
+        self.assertEqual(helpers.parse_timecode("0"), 0)
+        self.assertIsNotNone(helpers.parse_timecode("0"))
+
+    def test_too_many_parts_rejected(self):
+        with self.assertRaises(ValueError):
+            helpers.parse_timecode("1:2:3:4")
+
+    def test_non_numeric_rejected(self):
+        with self.assertRaises(ValueError):
+            helpers.parse_timecode("hier soir")
+
+    def test_negative_rejected(self):
+        with self.assertRaises(ValueError):
+            helpers.parse_timecode("-5")
+
+
 class TestSecurityRemainingBranches(unittest.TestCase):
     def test_validate_url_scheme_present_but_no_hostname(self):
         with self.assertRaises(SecurityError):
