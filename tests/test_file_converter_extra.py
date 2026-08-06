@@ -151,6 +151,75 @@ class TestConvertMedia(unittest.TestCase):
                     convert_file(str(src), "mp4", tmp_dir)
 
 
+class TestVideoResizeAndQuality(unittest.TestCase):
+    def _command_for(self, **kwargs) -> list[str]:
+        """Retourne la commande ffmpeg construite, sans lancer de conversion."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "clip.mp4"
+            src.write_bytes(b"\x00")
+            with patch.object(file_converter, "get_ffmpeg_path", return_value="ffmpeg"), \
+                 patch.object(file_converter.subprocess, "run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
+                convert_file(str(src), "mp4", tmp_dir, **kwargs)
+            return mock_run.call_args[0][0]
+
+    def test_no_scaling_filter_by_default(self):
+        self.assertNotIn("-vf", self._command_for())
+
+    def test_height_limit_keeps_proportions_and_even_width(self):
+        command = self._command_for(max_height=720)
+        filter_value = command[command.index("-vf") + 1]
+        # « -2 » laisse ffmpeg calculer une largeur paire : les codecs H.264
+        # et H.265 refusent les dimensions impaires.
+        self.assertIn("scale=-2:", filter_value)
+        self.assertIn("720", filter_value)
+
+    def test_quality_is_passed_as_crf(self):
+        command = self._command_for(crf=28)
+        self.assertIn("-crf", command)
+        self.assertEqual(command[command.index("-crf") + 1], "28")
+
+    def test_video_options_are_ignored_for_audio_output(self):
+        # Un MP3 n'a pas de piste vidéo : appliquer une mise à l'échelle ferait
+        # échouer ffmpeg au lieu de produire le fichier attendu.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "clip.mp4"
+            src.write_bytes(b"\x00")
+            with patch.object(file_converter, "get_ffmpeg_path", return_value="ffmpeg"), \
+                 patch.object(file_converter.subprocess, "run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stderr="")
+                convert_file(str(src), "mp3", tmp_dir, max_height=480, crf=28)
+            command = mock_run.call_args[0][0]
+        self.assertNotIn("-crf", command)
+        self.assertIn("-vn", command)
+
+    def test_real_downscaling_reduces_resolution_and_size(self):
+        import subprocess as sp
+
+        from utils.config import get_ffmpeg_path
+
+        ffmpeg = get_ffmpeg_path()
+        if not ffmpeg:
+            self.skipTest("ffmpeg indisponible")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "source.mp4"
+            sp.run([ffmpeg, "-y", "-f", "lavfi",
+                    "-i", "testsrc=size=1280x720:rate=15:duration=2",
+                    "-pix_fmt", "yuv420p", str(src)], capture_output=True)
+            if not src.exists():
+                self.skipTest("génération de la vidéo de test impossible")
+
+            out = convert_file(str(src), "mp4", tmp_dir, max_height=360, crf=30)
+
+            ffprobe = str(Path(ffmpeg).parent / "ffprobe.exe")
+            result = sp.run([ffprobe, "-v", "error", "-select_streams", "v:0",
+                             "-show_entries", "stream=width,height",
+                             "-of", "csv=p=0", out], capture_output=True, text=True)
+            self.assertEqual(result.stdout.strip(), "640,360")   # 16:9 conservé
+            self.assertLess(Path(out).stat().st_size, src.stat().st_size)
+
+
 class TestConvertDocument(unittest.TestCase):
     def test_docx_conversion_success(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

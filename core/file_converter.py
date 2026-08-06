@@ -62,6 +62,8 @@ def convert_file(
     cb: ProgressCb = None,
     max_width: int = 0,
     quality: int = 0,
+    max_height: int = 0,
+    crf: int = 0,
 ) -> str:
     """Convertit un fichier vers le format cible, en routant selon la catégorie.
 
@@ -73,6 +75,10 @@ def convert_file(
         max_width: images uniquement — largeur maximale en pixels, 0 = taille
             d'origine. La hauteur suit pour conserver les proportions.
         quality: images uniquement — qualité JPEG/WEBP de 1 à 95, 0 = défaut.
+        max_height: vidéos uniquement — hauteur maximale en pixels, 0 = résolution
+            d'origine.
+        crf: vidéos uniquement — qualité constante ffmpeg (18 = quasi sans perte,
+            32 = très compressé), 0 = réglage par défaut du codec.
 
     Returns:
         Chemin du fichier (ou dossier pour extraction) généré.
@@ -88,7 +94,7 @@ def convert_file(
     if category == "image":
         return _convert_image(src, target, output_dir, max_width, quality)
     if category in ("video", "audio"):
-        return _convert_media(src, target, output_dir, cb)
+        return _convert_media(src, target, output_dir, cb, max_height, crf)
     if category == "document":
         return _convert_document(src, output_dir)
     if category == "sheet":
@@ -136,8 +142,17 @@ def _convert_image(src: str, target: str, output_dir: str,
 
 
 # ---------------------------------------------------------------- vidéo/audio
-def _convert_media(src: str, target: str, output_dir: str, cb: ProgressCb) -> str:
-    """Convertit vidéo/audio via ffmpeg en sous-processus."""
+def _convert_media(src: str, target: str, output_dir: str, cb: ProgressCb,
+                   max_height: int = 0, crf: int = 0) -> str:
+    """Convertit vidéo/audio via ffmpeg en sous-processus.
+
+    Args:
+        max_height: hauteur maximale en pixels, 0 = résolution d'origine. La
+            largeur suit les proportions et est arrondie au nombre pair exigé
+            par les codecs vidéo.
+        crf: qualité constante ffmpeg, de 18 (quasi sans perte) à 32 (très
+            compressé). 0 = réglage par défaut du codec.
+    """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         raise RuntimeError("ffmpeg introuvable : installez-le ou ajoutez-le au PATH.")
@@ -148,6 +163,14 @@ def _convert_media(src: str, target: str, output_dir: str, cb: ProgressCb) -> st
         cmd += ["-vf", "fps=12,scale=480:-1:flags=lanczos"]
     elif target == "mp3":
         cmd += ["-vn", "-b:a", "192k"]
+    else:
+        if max_height:
+            # `-2` laisse ffmpeg calculer la largeur en gardant les
+            # proportions, tout en garantissant un nombre pair : les codecs
+            # H.264/H.265 refusent les dimensions impaires.
+            cmd += ["-vf", f"scale=-2:min({max_height}\\,ih)"]
+        if crf:
+            cmd += ["-crf", str(crf)]
     cmd.append(str(out))
 
     if cb:
