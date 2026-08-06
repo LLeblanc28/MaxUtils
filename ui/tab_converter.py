@@ -8,7 +8,7 @@ import customtkinter as ctk
 
 from core.file_converter import convert_file, detect_category
 from ui.dnd import register_drop_target
-from ui.widgets import LogBox
+from ui.widgets import LogBox, bind_memory
 from utils.config import TARGETS_BY_CATEGORY
 from utils.i18n import t, tl, untranslate
 from utils.security import SecurityError
@@ -30,6 +30,25 @@ IMAGE_QUALITIES = {
     "Élevée (85)": 85,
     "Moyenne (70)": 70,
     "Réduite (50)": 50,
+}
+
+# Mêmes réglages pour la vidéo. Le CRF est l'echelle de qualité constante de
+# ffmpeg : plus il est bas, plus le fichier est gros et fidèle.
+VIDEO_HEIGHTS = {
+    "Résolution d'origine": 0,
+    "2160 p (4K)": 2160,
+    "1080 p (Full HD)": 1080,
+    "720 p (HD)": 720,
+    "480 p": 480,
+    "360 p": 360,
+}
+
+VIDEO_QUALITIES = {
+    "Par défaut": 0,
+    "Très haute (CRF 18)": 18,
+    "Haute (CRF 23)": 23,
+    "Moyenne (CRF 28)": 28,
+    "Compressée (CRF 32)": 32,
 }
 
 
@@ -81,6 +100,22 @@ class ConverterTab(ctk.CTkFrame):
         self.quality_menu = ctk.CTkOptionMenu(images, values=tl(IMAGE_QUALITIES), width=130)
         self.quality_menu.set(t("Par défaut"))
         self.quality_menu.grid(row=0, column=3, padx=4, pady=8)
+
+        ctk.CTkLabel(images, text=t("Vidéos —  hauteur max :"))\
+            .grid(row=1, column=0, padx=(10, 4), pady=8)
+        self.height_menu = ctk.CTkOptionMenu(images, values=tl(VIDEO_HEIGHTS), width=130)
+        self.height_menu.set(t("Résolution d'origine"))
+        self.height_menu.grid(row=1, column=1, padx=4, pady=8)
+        ctk.CTkLabel(images, text=t("qualité :")).grid(row=1, column=2, padx=(16, 4), pady=8)
+        self.crf_menu = ctk.CTkOptionMenu(images, values=tl(VIDEO_QUALITIES), width=130)
+        self.crf_menu.set(t("Par défaut"))
+        self.crf_menu.grid(row=1, column=3, padx=4, pady=8)
+
+        for menu, key in ((self.width_menu, "conv.largeur"),
+                          (self.quality_menu, "conv.qualite_image"),
+                          (self.height_menu, "conv.hauteur"),
+                          (self.crf_menu, "conv.qualite_video")):
+            bind_memory(self.app, menu, key)
 
         self.convert_btn = ctk.CTkButton(self, text=t("Convertir tout"), command=self._convert_all)
         self.convert_btn.grid(row=4, column=0, padx=10, pady=5, sticky="w")
@@ -150,12 +185,15 @@ class ConverterTab(ctk.CTkFrame):
         # française avant toute recherche dans les tables de correspondance.
         max_width = IMAGE_WIDTHS[untranslate(self.width_menu.get())]
         quality = IMAGE_QUALITIES[untranslate(self.quality_menu.get())]
+        max_height = VIDEO_HEIGHTS[untranslate(self.height_menu.get())]
+        crf = VIDEO_QUALITIES[untranslate(self.crf_menu.get())]
 
         def worker() -> None:
             total = len(files)
             for i, f in enumerate(files):
                 try:
-                    out = convert_file(f, target, dest, None, max_width, quality)
+                    out = convert_file(f, target, dest, None, max_width, quality,
+                                       max_height, crf)
                     self.logbox.log(f"✔ {Path(f).name} → {Path(out).name}", "success")
                 except SecurityError as e:
                     self.logbox.log(

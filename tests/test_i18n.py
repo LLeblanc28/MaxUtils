@@ -151,6 +151,105 @@ class TestNoFrenchTextLeaksInEnglish(_LanguageTestCase):
             app.destroy()
 
 
+class TestBindMemory(_LanguageTestCase):
+    """La mémoire des réglages doit stocker la clé française, jamais le libellé
+    affiché : sinon un choix fait en anglais serait perdu au retour au
+    français, et inversement."""
+
+    @classmethod
+    def setUpClass(cls):
+        import customtkinter as ctk
+
+        cls.root = ctk.CTk()
+        cls.root.withdraw()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.root.destroy()
+
+    def _menu(self, values):
+        import customtkinter as ctk
+
+        return ctk.CTkOptionMenu(self.root, values=values)
+
+    def test_nothing_happens_without_an_app_memory(self):
+        from types import SimpleNamespace
+
+        from ui.widgets import bind_memory
+
+        menu = self._menu(["Noir", "Rouge"])
+        bind_memory(SimpleNamespace(), menu, "cle")   # ne doit pas lever
+        menu.destroy()
+
+    def test_stored_value_is_restored(self):
+        from types import SimpleNamespace
+
+        from ui.widgets import bind_memory
+
+        store = {"cle": "Rouge"}
+        app = SimpleNamespace(recall=lambda k, d="": store.get(k, d),
+                              remember=lambda k, v: store.__setitem__(k, v))
+        menu = self._menu(["Noir", "Rouge"])
+        bind_memory(app, menu, "cle")
+        self.assertEqual(menu.get(), "Rouge")
+        menu.destroy()
+
+    def test_a_stale_value_is_ignored(self):
+        from types import SimpleNamespace
+
+        from ui.widgets import bind_memory
+
+        app = SimpleNamespace(recall=lambda k, d="": "Chartreuse",
+                              remember=lambda k, v: None)
+        menu = self._menu(["Noir", "Rouge"])
+        menu.set("Noir")
+        bind_memory(app, menu, "cle")
+        self.assertEqual(menu.get(), "Noir")   # la valeur devenue invalide est écartée
+        menu.destroy()
+
+    def test_choice_is_stored_under_its_french_key(self):
+        from types import SimpleNamespace
+
+        from ui.widgets import bind_memory
+
+        store = {}
+        app = SimpleNamespace(recall=lambda k, d="": store.get(k, d),
+                              remember=lambda k, v: store.__setitem__(k, v))
+        set_language("en")
+        menu = self._menu(tl(["Noir", "Rouge"]))
+        bind_memory(app, menu, "cle")
+        menu._command("Red")
+        self.assertEqual(store["cle"], "Rouge")
+        menu.destroy()
+
+    def test_a_value_stored_in_french_is_shown_translated(self):
+        from types import SimpleNamespace
+
+        from ui.widgets import bind_memory
+
+        app = SimpleNamespace(recall=lambda k, d="": "Rouge",
+                              remember=lambda k, v: None)
+        set_language("en")
+        menu = self._menu(tl(["Noir", "Rouge"]))
+        bind_memory(app, menu, "cle")
+        self.assertEqual(menu.get(), "Red")
+        menu.destroy()
+
+    def test_an_existing_command_is_preserved(self):
+        from types import SimpleNamespace
+
+        from ui.widgets import bind_memory
+
+        calls = []
+        app = SimpleNamespace(recall=lambda k, d="": "", remember=lambda k, v: None)
+        menu = self._menu(["Noir", "Rouge"])
+        menu.configure(command=calls.append)
+        bind_memory(app, menu, "cle")
+        menu._command("Rouge")
+        self.assertEqual(calls, ["Rouge"])   # le comportement d'origine subsiste
+        menu.destroy()
+
+
 class TestTranslationTable(unittest.TestCase):
     def test_no_translation_is_left_empty(self):
         empty = [key for key, value in TRANSLATIONS.items() if not value.strip()]
