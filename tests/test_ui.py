@@ -230,6 +230,124 @@ class TestVideoTab(_TkTestCase):
         self.assertEqual(captured["start"], "1:20")
         self.assertEqual(captured["end"], "3:45")
 
+    def test_enqueue_adds_and_clears_the_field(self):
+        self.tab.url_entry.insert(0, "https://example.com/a")
+        self.tab._enqueue()
+        self.assertEqual(self.tab.queue, ["https://example.com/a"])
+        self.assertEqual(self.tab.url_entry.get(), "")
+        self.assertIn("File d'attente : 1", self.tab.queue_label.cget("text"))
+
+    def test_enqueue_refuses_an_empty_or_unsafe_url(self):
+        self.tab._enqueue()
+        self.assertEqual(self.tab.queue, [])
+        self.tab.url_entry.insert(0, "file:///etc/passwd")
+        self.tab._enqueue()
+        self.assertEqual(self.tab.queue, [])
+        self.assertIn("URL refusée", self.tab.logbox.text.get("1.0", "end"))
+
+    def test_enqueue_refuses_a_duplicate(self):
+        for _ in range(2):
+            self.tab.url_entry.delete(0, "end")
+            self.tab.url_entry.insert(0, "https://example.com/a")
+            self.tab._enqueue()
+        self.assertEqual(len(self.tab.queue), 1)
+        self.assertIn("déjà dans la file", self.tab.logbox.text.get("1.0", "end"))
+
+    def test_clearing_the_queue_hides_its_label(self):
+        self.tab.url_entry.insert(0, "https://example.com/a")
+        self.tab._enqueue()
+        self.tab._clear_queue()
+        self.assertEqual(self.tab.queue, [])
+        self.assertEqual(self.tab.queue_label.cget("text"), "")
+
+    def test_queue_is_downloaded_in_order_then_emptied(self):
+        for url in ("https://example.com/a", "https://example.com/b"):
+            self.tab.url_entry.delete(0, "end")
+            self.tab.url_entry.insert(0, url)
+            self.tab._enqueue()
+
+        seen = []
+
+        def fake_download(url, dest, *a, **kw):
+            seen.append(url)
+            return [f"{dest}/{len(seen)}.mp4"]
+
+        with patch.object(self.tab.downloader, "download", side_effect=fake_download):
+            self.tab._start_download()
+
+        self.assertEqual(seen, ["https://example.com/a", "https://example.com/b"])
+        self.assertIn("File terminée : 2", self.tab.logbox.text.get("1.0", "end"))
+        self.assertEqual(self.tab.queue, [])
+
+    def test_url_left_in_the_field_is_appended_to_the_queue(self):
+        # Une adresse saisie mais pas encore mise à la file ne doit pas être
+        # perdue au moment de lancer le téléchargement.
+        self.tab.url_entry.insert(0, "https://example.com/a")
+        self.tab._enqueue()
+        self.tab.url_entry.insert(0, "https://example.com/oubliee")
+
+        seen = []
+        with patch.object(self.tab.downloader, "download",
+                          side_effect=lambda url, dest, *a, **kw: seen.append(url) or ["x.mp4"]):
+            self.tab._start_download()
+        self.assertEqual(seen, ["https://example.com/a", "https://example.com/oubliee"])
+
+    def test_a_failing_url_does_not_stop_the_queue(self):
+        for url in ("https://example.com/ko", "https://example.com/ok"):
+            self.tab.url_entry.delete(0, "end")
+            self.tab.url_entry.insert(0, url)
+            self.tab._enqueue()
+
+        def fake_download(url, dest, *a, **kw):
+            if url.endswith("ko"):
+                raise RuntimeError("vidéo indisponible")
+            return [f"{dest}/ok.mp4"]
+
+        with patch.object(self.tab.downloader, "download", side_effect=fake_download):
+            self.tab._start_download()
+
+        text = self.tab.logbox.text.get("1.0", "end")
+        self.assertIn("vidéo indisponible", text)
+        self.assertIn("File terminée : 1", text)   # la seconde a bien abouti
+
+    def test_a_security_error_in_the_queue_is_reported_and_skipped(self):
+        for url in ("https://example.com/a", "https://example.com/b"):
+            self.tab.url_entry.delete(0, "end")
+            self.tab.url_entry.insert(0, url)
+            self.tab._enqueue()
+
+        def fake_download(url, dest, *a, **kw):
+            if url.endswith("a"):
+                raise SecurityError("chemin refusé")
+            return [f"{dest}/b.mp4"]
+
+        with patch.object(self.tab.downloader, "download", side_effect=fake_download):
+            self.tab._start_download()
+
+        text = self.tab.logbox.text.get("1.0", "end")
+        self.assertIn("⛔ Sécurité", text)
+        self.assertIn("File terminée : 1", text)
+
+    def test_cancelling_stops_the_whole_queue(self):
+        from core.video_downloader import CancelledError
+
+        for url in ("https://example.com/a", "https://example.com/b"):
+            self.tab.url_entry.delete(0, "end")
+            self.tab.url_entry.insert(0, url)
+            self.tab._enqueue()
+
+        seen = []
+
+        def fake_download(url, dest, *a, **kw):
+            seen.append(url)
+            raise CancelledError("annulé")
+
+        with patch.object(self.tab.downloader, "download", side_effect=fake_download):
+            self.tab._start_download()
+
+        self.assertEqual(len(seen), 1)   # la file s'arrête net
+        self.assertIn("annulé", self.tab.logbox.text.get("1.0", "end"))
+
     def test_start_download_cancelled_logged(self):
         from core.video_downloader import CancelledError
 
@@ -311,7 +429,8 @@ class TestConverterTab(_TkTestCase):
         self.tab.target_menu.configure(values=["PNG"])
         self.tab.target_menu.set("PNG")
 
-        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0):
+        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0,
+                         max_height=0, crf=0):
             if src == "a.png":
                 return "out/a.png"
             if src == "b.png":
@@ -339,7 +458,8 @@ class TestConverterTab(_TkTestCase):
 
         captured = {}
 
-        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0):
+        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0,
+                         max_height=0, crf=0):
             captured.update(max_width=max_width, quality=quality)
             return "out/photo.jpg"
 
@@ -355,7 +475,8 @@ class TestConverterTab(_TkTestCase):
         self.tab.target_menu.set("PNG")
         captured = {}
 
-        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0):
+        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0,
+                         max_height=0, crf=0):
             captured.update(max_width=max_width, quality=quality)
             return "out/photo.png"
 
@@ -569,6 +690,55 @@ class TestMultiToolApp(_TkTestCase):
             with patch("ui.app.update_yt_dlp", return_value=(False, "Échec : pas de réseau")):
                 app._update_yt_dlp()
             self.assertIn("Échec", app.update_label.cget("text"))
+        finally:
+            app.destroy()
+
+    def test_app_update_button_announces_a_newer_version(self):
+        app = self._make_app()
+        _sync_after(app)
+        try:
+            app._open_settings()
+            with patch("ui.app.check_app_update",
+                       return_value=(True, "Version 2.0.0 disponible")):
+                app._check_app_update()
+            self.assertIn("2.0.0", app.app_update_label.cget("text"))
+            self.assertEqual(app.app_update_btn.cget("state"), "normal")
+        finally:
+            app.destroy()
+
+    def test_app_update_button_reports_being_up_to_date(self):
+        app = self._make_app()
+        _sync_after(app)
+        try:
+            app._open_settings()
+            with patch("ui.app.check_app_update",
+                       return_value=(False, "Vous utilisez la dernière version")):
+                app._check_app_update()
+            self.assertIn("dernière version", app.app_update_label.cget("text"))
+        finally:
+            app.destroy()
+
+    def test_app_update_result_ignored_when_window_was_closed(self):
+        app = self._make_app()
+        try:
+            app._open_settings()
+            for child in app.winfo_children():
+                if isinstance(child, ctk.CTkToplevel):
+                    child.destroy()
+            app._show_app_update_result(True, "terminé")  # ne doit pas lever
+        finally:
+            app.destroy()
+
+    def test_settings_are_remembered_between_sessions(self):
+        # La mémoire passe par le fichier de configuration : on vérifie que la
+        # valeur y est bien écrite, et sous sa clé française.
+        app = self._make_app()
+        try:
+            with patch("ui.app.save_config") as mock_save:
+                app.remember("conv.largeur", "800 px (web)")
+            self.assertEqual(app.recall("conv.largeur"), "800 px (web)")
+            self.assertEqual(app.recall("inconnu", "defaut"), "defaut")
+            mock_save.assert_called_once()
         finally:
             app.destroy()
 

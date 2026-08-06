@@ -6,11 +6,12 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from core.updater import current_version, update_yt_dlp
+from core.updater import check_app_update, current_version, update_yt_dlp
 from ui.dnd import enable_dnd
 from ui.tab_converter import ConverterTab
 from ui.tab_pdf import PdfTab
 from ui.tab_pdf_editor import PdfEditorTab
+from ui.tab_pdf_organizer import PdfOrganizerTab
 from ui.tab_pdf_tools import PdfToolsTab
 from ui.tab_video import VideoTab
 from utils.config import (
@@ -24,7 +25,7 @@ from utils.config import (
 from utils.i18n import set_language, t
 
 TAB_KEYS = ("📥 Vidéo", "🔄 Convertisseur", "📄 Fusion PDF",
-            "✏️ Éditeur PDF", "🧰 Outils PDF")
+            "✏️ Éditeur PDF", "🧰 Outils PDF", "🗂️ Organiser")
 
 
 class MultiToolApp(ctk.CTk):
@@ -81,13 +82,14 @@ class MultiToolApp(ctk.CTk):
         PdfTab(self.tabview.tab(names[2]), self).pack(fill="both", expand=True)
         PdfEditorTab(self.tabview.tab(names[3]), self).pack(fill="both", expand=True)
         PdfToolsTab(self.tabview.tab(names[4]), self).pack(fill="both", expand=True)
+        PdfOrganizerTab(self.tabview.tab(names[5]), self).pack(fill="both", expand=True)
 
     # -------------------------------------------------------------- settings
     def _open_settings(self) -> None:
         """Ouvre la fenêtre de paramètres (thème, dossier, langue)."""
         win = ctk.CTkToplevel(self)
         win.title(t("Paramètres"))
-        win.geometry("520x420")
+        win.geometry("560x520")
         win.grab_set()
         win.grid_columnconfigure(1, weight=1)
 
@@ -136,6 +138,35 @@ class MultiToolApp(ctk.CTk):
                                         command=self._update_yt_dlp)
         self.update_btn.grid(row=5, column=1, padx=12, pady=6, sticky="e")
 
+        ctk.CTkLabel(win, text=t("Application :"))\
+            .grid(row=7, column=0, padx=12, pady=(12, 6), sticky="w")
+        self.app_update_label = ctk.CTkLabel(
+            win, text=f"MultiToolApp {APP_VERSION}", anchor="w")
+        self.app_update_label.grid(row=7, column=1, padx=12, pady=(12, 6), sticky="ew")
+        self.app_update_btn = ctk.CTkButton(win, text=t("Vérifier les mises à jour"),
+                                            command=self._check_app_update)
+        self.app_update_btn.grid(row=8, column=1, padx=12, pady=6, sticky="e")
+
+    def _check_app_update(self) -> None:
+        """Interroge GitHub en tâche de fond, sans figer la fenêtre."""
+        self.app_update_btn.configure(state="disabled")
+        self.app_update_label.configure(text=t("Vérification en cours..."))
+
+        def worker() -> None:
+            available, message = check_app_update(APP_VERSION)
+            self.after(0, lambda: self._show_app_update_result(available, message))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_app_update_result(self, available: bool, message: str) -> None:
+        """Affiche le résultat, en vert si une nouvelle version existe."""
+        try:
+            self.app_update_label.configure(
+                text=message, text_color="#4d9bff" if available else "#9e9e9e")
+            self.app_update_btn.configure(state="normal")
+        except Exception:
+            pass  # fenêtre de paramètres refermée entre-temps
+
     def _update_yt_dlp(self) -> None:
         """Lance la mise à jour en tâche de fond, sans figer la fenêtre."""
         self.update_btn.configure(state="disabled")
@@ -168,4 +199,14 @@ class MultiToolApp(ctk.CTk):
 
     def _set_cfg(self, key: str, value: str) -> None:
         self.config_data[key] = value
+        save_config(self.config_data)
+
+    # ------------------------------------------------- mémoire des réglages
+    def recall(self, key: str, default: str = "") -> str:
+        """Dernière valeur retenue pour ce réglage, ou `default`."""
+        return self.config_data.get("last_used", {}).get(key, default)
+
+    def remember(self, key: str, value: str) -> None:
+        """Retient un réglage pour la prochaine ouverture de l'application."""
+        self.config_data.setdefault("last_used", {})[key] = value
         save_config(self.config_data)

@@ -31,6 +31,9 @@ TRANSLATIONS: dict[str, str] = {
     "Téléchargeur vidéo :": "Video downloader:",
     "Mettre à jour yt-dlp": "Update yt-dlp",
     "Mise à jour en cours...": "Updating...",
+    "Application :": "Application:",
+    "Vérifier les mises à jour": "Check for updates",
+    "Vérification en cours...": "Checking...",
     "Le changement de langue s'applique au redémarrage.":
         "The language change takes effect after a restart.",
 
@@ -48,6 +51,13 @@ TRANSLATIONS: dict[str, str] = {
     "Annuler": "Cancel",
     "Veuillez saisir une URL.": "Please enter a URL.",
     "Téléchargement en {format}...": "Downloading as {format}...",
+    "➕ À la file": "➕ To queue",
+    "Vider la file": "Clear queue",
+    "File d'attente : {count} URL": "Queue: {count} URL",
+    "Ajouté à la file ({count} au total).": "Added to queue ({count} in total).",
+    "Cette URL est déjà dans la file.": "This URL is already in the queue.",
+    "[{position}/{total}] {url}": "[{position}/{total}] {url}",
+    "File terminée : {count} fichier(s).": "Queue finished: {count} file(s).",
     "Terminé : {path}": "Done: {path}",
     "Terminé : {count} fichiers dans {folder}": "Done: {count} files in {folder}",
     "⛔ URL refusée : {error}": "⛔ URL refused: {error}",
@@ -135,6 +145,7 @@ TRANSLATIONS: dict[str, str] = {
     "▭  Rectangle": "▭  Rectangle",
     "◯  Ellipse": "◯  Ellipse",
     "▬  Surlignage": "▬  Highlight",
+    "██  Caviarder": "██  Redact",
     "── Texte ──": "── Text ──",
     "── Tracé ──": "── Drawing ──",
     "── Filigrane ──": "── Watermark ──",
@@ -200,6 +211,50 @@ TRANSLATIONS: dict[str, str] = {
     "Saisissez le nouveau mot de passe.": "Enter the new password.",
     "Saisissez le mot de passe du fichier (champ du haut).":
         "Enter the file password (field at the top).",
+
+    # --- Extraction et numérotation --------------------------------------
+    "📤  Extraire le contenu": "📤  Extract content",
+    "Texte → .txt": "Text → .txt",
+    "Texte → .docx": "Text → .docx",
+    "Images embarquées": "Embedded images",
+    "🔢  Numéroter / en-tête / pied de page": "🔢  Numbering / header / footer",
+    "Position :": "Position:",
+    "Format :": "Format:",
+    "Commencer à :": "Start at:",
+    "Ne pas numéroter la première page (couverture)":
+        "Do not number the first page (cover)",
+    "En-tête :": "Header:",
+    "Pied de page :": "Footer:",
+    "laisser vide pour aucun": "leave empty for none",
+    "Appliquer": "Apply",
+    "Bas centre": "Bottom centre",
+    "Bas droite": "Bottom right",
+    "Bas gauche": "Bottom left",
+    "Haut centre": "Top centre",
+    "Haut droite": "Top right",
+    "Haut gauche": "Top left",
+    "Le numéro de départ doit être un nombre entier.":
+        "The starting number must be a whole number.",
+    "PDF numéroté : {path}": "PDF numbered: {path}",
+    "{count} caractères extraits : {path}": "{count} characters extracted: {path}",
+    "Aucun texte trouvé : ce PDF est probablement un scan. Fichier créé mais vide : {path}":
+        "No text found: this PDF is probably a scan. File created but empty: {path}",
+    "{count} image(s) extraite(s) dans {folder}": "{count} image(s) extracted into {folder}",
+    "Aucune image embarquée dans ce PDF.": "No embedded image in this PDF.",
+
+    # --- Onglet Organiser -------------------------------------------------
+    "🗂️ Organiser": "🗂️ Organise",
+    "Pages  —  cliquez pour sélectionner": "Pages  —  click to select",
+    "◀ Reculer": "◀ Move back",
+    "Avancer ▶": "Move forward ▶",
+    "↺ Pivoter": "↺ Rotate",
+    "↻ Pivoter": "↻ Rotate",
+    "🗑 Supprimer": "🗑 Delete",
+    "↩ Réinitialiser": "↩ Reset",
+    "Sélectionnez d'abord une page.": "Select a page first.",
+    "Le document doit conserver au moins une page.":
+        "The document must keep at least one page.",
+    "PDF réorganisé : {path}": "PDF reorganised: {path}",
 
     # --- Couleurs partagées ---------------------------------------------
     "Noir": "Black",

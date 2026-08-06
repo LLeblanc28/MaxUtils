@@ -90,5 +90,122 @@ class TestUpdateYtDlp(unittest.TestCase):
         self.assertIn("yt-dlp", command)
 
 
+class TestParseVersion(unittest.TestCase):
+    def test_plain_version(self):
+        self.assertEqual(updater.parse_version("1.2.3"), (1, 2, 3))
+
+    def test_leading_v_is_ignored(self):
+        self.assertEqual(updater.parse_version("v2.0.1"), (2, 0, 1))
+
+    def test_suffix_is_dropped(self):
+        self.assertEqual(updater.parse_version("v1.4.0-beta"), (1, 4, 0))
+
+    def test_comparison_orders_versions_correctly(self):
+        self.assertGreater(updater.parse_version("1.10.0"), updater.parse_version("1.9.0"))
+        self.assertGreater(updater.parse_version("2.0.0"), updater.parse_version("1.99.99"))
+        self.assertEqual(updater.parse_version("1.0.0"), updater.parse_version("v1.0.0"))
+
+    def test_unparseable_text_gives_an_empty_tuple(self):
+        self.assertEqual(updater.parse_version("inconnue"), ())
+
+
+class TestCheckAppUpdate(unittest.TestCase):
+    def _respond(self, payload: dict):
+        """Simule la réponse JSON de l'API GitHub."""
+        import io
+        import json
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_urlopen(request, timeout=None):
+            yield io.BytesIO(json.dumps(payload).encode("utf-8"))
+
+        return patch.object(updater.urllib.request, "urlopen", fake_urlopen)
+
+    def test_newer_version_is_announced_with_the_link(self):
+        with self._respond({"tag_name": "v2.0.0"}):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertTrue(available)
+        self.assertIn("2.0.0", message)
+        self.assertIn("github.com", message)
+
+    def test_same_version_reports_up_to_date(self):
+        with self._respond({"tag_name": "v1.0.0"}):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("dernière version", message)
+
+    def test_older_published_version_is_not_offered(self):
+        with self._respond({"tag_name": "v0.9.0"}):
+            available, _ = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+
+    def test_no_release_yet(self):
+        with self._respond({}):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("Aucune version", message)
+
+    def test_offline_is_explained_without_a_traceback(self):
+        with patch.object(updater.urllib.request, "urlopen",
+                          side_effect=updater.urllib.error.URLError("pas de réseau")):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("connexion", message)
+
+    def test_missing_repository_is_explained(self):
+        error = updater.urllib.error.HTTPError(
+            updater.RELEASES_URL, 404, "Not Found", {}, None)
+        with patch.object(updater.urllib.request, "urlopen", side_effect=error):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("Aucune version", message)
+
+    def test_other_http_errors_are_reported(self):
+        error = updater.urllib.error.HTTPError(
+            updater.RELEASES_URL, 503, "Unavailable", {}, None)
+        with patch.object(updater.urllib.request, "urlopen", side_effect=error):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("503", message)
+
+    def test_malformed_response_is_reported(self):
+        import io
+        from contextlib import contextmanager
+
+        @contextmanager
+        def broken(request, timeout=None):
+            yield io.BytesIO(b"ceci n'est pas du JSON")
+
+        with patch.object(updater.urllib.request, "urlopen", broken):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("impossible", message)
+
+    def test_timeout_is_reported(self):
+        with patch.object(updater.urllib.request, "urlopen", side_effect=TimeoutError()):
+            available, message = updater.check_app_update("1.0.0")
+        self.assertFalse(available)
+        self.assertIn("connexion", message)
+
+    def test_no_user_data_is_sent(self):
+        # La requête ne doit contenir que l'adresse publique du dépôt.
+        captured = {}
+        import io
+        from contextlib import contextmanager
+
+        @contextmanager
+        def capture(request, timeout=None):
+            captured["url"] = request.full_url
+            captured["data"] = request.data
+            yield io.BytesIO(b'{"tag_name": "v1.0.0"}')
+
+        with patch.object(updater.urllib.request, "urlopen", capture):
+            updater.check_app_update("1.0.0")
+
+        self.assertEqual(captured["url"], updater.RELEASES_URL)
+        self.assertIsNone(captured["data"])
+
+
 if __name__ == "__main__":
     unittest.main()
