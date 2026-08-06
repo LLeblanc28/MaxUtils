@@ -185,16 +185,50 @@ class TestVideoTab(_TkTestCase):
     def test_start_download_success_with_progress(self):
         self.tab.url_entry.insert(0, "https://example.com/watch")
 
-        def fake_download(url, dest, fmt, quality, bitrate, progress_callback):
+        def fake_download(url, dest, fmt, quality, bitrate, progress_callback,
+                          playlist=False, subtitles="", start="", end=""):
             progress_callback({"percent": 0.5, "speed": 1024, "eta": 3})
             progress_callback({"percent": 1.0, "speed": None, "eta": None})
-            return str(Path(dest) / "video.mp4")
+            return [str(Path(dest) / "video.mp4")]
 
         with patch.object(self.tab.downloader, "download", side_effect=fake_download):
             self.tab._start_download()
         text = self.tab.logbox.text.get("1.0", "end")
         self.assertIn("Terminé", text)
         self.assertEqual(self.tab.dl_btn.cget("state"), "normal")
+
+    def test_playlist_download_reports_a_file_count(self):
+        self.tab.url_entry.insert(0, "https://example.com/playlist")
+        self.tab.playlist_var.set(True)
+
+        def fake_download(url, dest, fmt, quality, bitrate, progress_callback,
+                          playlist=False, subtitles="", start="", end=""):
+            return [f"{dest}/1.mp4", f"{dest}/2.mp4", f"{dest}/3.mp4"]
+
+        with patch.object(self.tab.downloader, "download", side_effect=fake_download):
+            self.tab._start_download()
+        self.assertIn("3 fichiers", self.tab.logbox.text.get("1.0", "end"))
+
+    def test_advanced_options_are_passed_to_the_downloader(self):
+        self.tab.url_entry.insert(0, "https://example.com/watch")
+        self.tab.playlist_var.set(True)
+        self.tab.subtitle_menu.set("Français")
+        self.tab.start_entry.insert(0, "1:20")
+        self.tab.end_entry.insert(0, "3:45")
+        captured = {}
+
+        def fake_download(url, dest, fmt, quality, bitrate, progress_callback,
+                          playlist=False, subtitles="", start="", end=""):
+            captured.update(playlist=playlist, subtitles=subtitles, start=start, end=end)
+            return [f"{dest}/video.mp4"]
+
+        with patch.object(self.tab.downloader, "download", side_effect=fake_download):
+            self.tab._start_download()
+
+        self.assertTrue(captured["playlist"])
+        self.assertEqual(captured["subtitles"], "fr")
+        self.assertEqual(captured["start"], "1:20")
+        self.assertEqual(captured["end"], "3:45")
 
     def test_start_download_cancelled_logged(self):
         from core.video_downloader import CancelledError
@@ -277,7 +311,7 @@ class TestConverterTab(_TkTestCase):
         self.tab.target_menu.configure(values=["PNG"])
         self.tab.target_menu.set("PNG")
 
-        def fake_convert(src, target, dest):
+        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0):
             if src == "a.png":
                 return "out/a.png"
             if src == "b.png":
@@ -293,6 +327,43 @@ class TestConverterTab(_TkTestCase):
         self.assertIn("✖", text)
         self.assertIn("Conversion terminée", text)
         self.assertEqual(self.tab.convert_btn.cget("state"), "normal")
+
+    def test_image_options_are_passed_to_the_converter(self):
+        from ui.tab_converter import IMAGE_QUALITIES, IMAGE_WIDTHS
+
+        self.tab.files = ["photo.png"]
+        self.tab.target_menu.configure(values=["JPG"])
+        self.tab.target_menu.set("JPG")
+        self.tab.width_menu.set("800 px (web)")
+        self.tab.quality_menu.set("Moyenne (70)")
+
+        captured = {}
+
+        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0):
+            captured.update(max_width=max_width, quality=quality)
+            return "out/photo.jpg"
+
+        with patch("ui.tab_converter.convert_file", side_effect=fake_convert):
+            self.tab._convert_all()
+
+        self.assertEqual(captured["max_width"], IMAGE_WIDTHS["800 px (web)"])
+        self.assertEqual(captured["quality"], IMAGE_QUALITIES["Moyenne (70)"])
+
+    def test_default_image_options_mean_no_change(self):
+        self.tab.files = ["photo.png"]
+        self.tab.target_menu.configure(values=["PNG"])
+        self.tab.target_menu.set("PNG")
+        captured = {}
+
+        def fake_convert(src, target, dest, cb=None, max_width=0, quality=0):
+            captured.update(max_width=max_width, quality=quality)
+            return "out/photo.png"
+
+        with patch("ui.tab_converter.convert_file", side_effect=fake_convert):
+            self.tab._convert_all()
+
+        self.assertEqual(captured["max_width"], 0)
+        self.assertEqual(captured["quality"], 0)
 
 
 class TestPdfTab(_TkTestCase):
@@ -475,6 +546,42 @@ class TestMultiToolApp(_TkTestCase):
 
                 self.assertGreaterEqual(mock_save.call_count, 3)
                 win.destroy()
+        finally:
+            app.destroy()
+
+    def test_yt_dlp_update_button_reports_success(self):
+        app = self._make_app()
+        _sync_after(app)
+        try:
+            app._open_settings()
+            with patch("ui.app.update_yt_dlp", return_value=(True, "yt-dlp mis à jour")):
+                app._update_yt_dlp()
+            self.assertIn("mis à jour", app.update_label.cget("text"))
+            self.assertEqual(app.update_btn.cget("state"), "normal")
+        finally:
+            app.destroy()
+
+    def test_yt_dlp_update_button_reports_failure(self):
+        app = self._make_app()
+        _sync_after(app)
+        try:
+            app._open_settings()
+            with patch("ui.app.update_yt_dlp", return_value=(False, "Échec : pas de réseau")):
+                app._update_yt_dlp()
+            self.assertIn("Échec", app.update_label.cget("text"))
+        finally:
+            app.destroy()
+
+    def test_update_result_ignored_when_settings_window_was_closed(self):
+        # La mise à jour tourne en tâche de fond : l'utilisateur peut refermer
+        # la fenêtre avant la fin, et le résultat n'a alors plus où s'afficher.
+        app = self._make_app()
+        try:
+            app._open_settings()
+            for child in app.winfo_children():
+                if isinstance(child, ctk.CTkToplevel):
+                    child.destroy()
+            app._show_update_result(True, "terminé")  # ne doit pas lever
         finally:
             app.destroy()
 

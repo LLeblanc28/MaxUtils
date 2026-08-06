@@ -14,8 +14,10 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from core.pdf_editor import COLORS, FONT_FAMILIES, Annotation, PdfEditor, Style, Watermark
+from ui.dnd import register_drop_target
 from ui.signature_dialog import SignatureDialog
 from ui.widgets import LogBox
+from utils.i18n import t, tl, untranslate
 from utils.security import SecurityError
 
 TOOL_LABELS = (
@@ -59,8 +61,8 @@ class PdfEditorTab(ctk.CTkFrame):
 
         top = ctk.CTkFrame(self, fg_color="transparent")
         top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 5))
-        ctk.CTkButton(top, text="📂 Ouvrir un PDF", command=self._open_pdf).pack(side="left", padx=5)
-        self.file_label = ctk.CTkLabel(top, text="Aucun fichier chargé.", anchor="w")
+        ctk.CTkButton(top, text=t("📂 Ouvrir un PDF"), command=self._open_pdf).pack(side="left", padx=5)
+        self.file_label = ctk.CTkLabel(top, text=t("Aucun fichier chargé."), anchor="w")
         self.file_label.pack(side="left", padx=10)
 
         self._build_sidebar()
@@ -71,15 +73,15 @@ class PdfEditorTab(ctk.CTkFrame):
         self.logbox.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(5, 10))
 
     def _build_sidebar(self) -> None:
-        side = ctk.CTkScrollableFrame(self, label_text="Outils & propriétés", width=250)
+        side = ctk.CTkScrollableFrame(self, label_text=t("Outils & propriétés"), width=250)
         side.grid(row=1, column=0, sticky="ns", padx=(10, 5), pady=5)
 
         self.tool_var = ctk.StringVar(value="text")
         for value, label in TOOL_LABELS:
-            ctk.CTkRadioButton(side, text=label, variable=self.tool_var, value=value,
+            ctk.CTkRadioButton(side, text=t(label), variable=self.tool_var, value=value,
                                command=self._on_tool_change).pack(anchor="w", pady=3, padx=6)
 
-        ctk.CTkLabel(side, text="── Texte ──", anchor="w").pack(fill="x", pady=(12, 2), padx=6)
+        ctk.CTkLabel(side, text=t("── Texte ──"), anchor="w").pack(fill="x", pady=(12, 2), padx=6)
         self.family_menu = self._labeled_menu(side, "Police", list(FONT_FAMILIES), "Helvetica")
         self.size_menu = self._labeled_menu(side, "Taille", FONT_SIZES, "14")
 
@@ -88,25 +90,26 @@ class PdfEditorTab(ctk.CTkFrame):
         self.bold_var = ctk.BooleanVar(value=False)
         self.italic_var = ctk.BooleanVar(value=False)
         self.underline_var = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(styles, text="Gras", width=70, checkbox_width=18, checkbox_height=18,
+        ctk.CTkCheckBox(styles, text=t("Gras"), width=70, checkbox_width=18, checkbox_height=18,
                         variable=self.bold_var,
                         font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 6))
-        ctk.CTkCheckBox(styles, text="Ital.", width=70, checkbox_width=18, checkbox_height=18,
+        ctk.CTkCheckBox(styles, text=t("Ital."), width=70, checkbox_width=18, checkbox_height=18,
                         variable=self.italic_var,
                         font=ctk.CTkFont(slant="italic")).pack(side="left", padx=6)
-        ctk.CTkCheckBox(styles, text="Soul.", width=70, checkbox_width=18, checkbox_height=18,
+        ctk.CTkCheckBox(styles, text=t("Soul."), width=70, checkbox_width=18, checkbox_height=18,
                         variable=self.underline_var,
                         font=ctk.CTkFont(underline=True)).pack(side="left", padx=6)
 
-        ctk.CTkLabel(side, text="── Tracé ──", anchor="w").pack(fill="x", pady=(12, 2), padx=6)
-        self.color_menu = self._labeled_menu(side, "Couleur", list(COLORS), "Noir")
-        self.fill_menu = self._labeled_menu(side, "Remplissage", [NO_FILL] + list(COLORS), NO_FILL)
+        ctk.CTkLabel(side, text=t("── Tracé ──"), anchor="w").pack(fill="x", pady=(12, 2), padx=6)
+        self.color_menu = self._labeled_menu(side, "Couleur", tl(COLORS), t("Noir"))
+        self.fill_menu = self._labeled_menu(side, "Remplissage",
+                                            tl([NO_FILL] + list(COLORS)), t(NO_FILL))
         self.width_menu = self._labeled_menu(side, "Épaisseur", LINE_WIDTHS, "2")
         self.opacity_menu = self._labeled_menu(side, "Opacité", OPACITIES, "100 %")
 
-        ctk.CTkLabel(side, text="── Filigrane ──", anchor="w").pack(fill="x", pady=(12, 2), padx=6)
+        ctk.CTkLabel(side, text=t("── Filigrane ──"), anchor="w").pack(fill="x", pady=(12, 2), padx=6)
         self.watermark_var = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(side, text="Filigrane sur toutes les pages",
+        ctk.CTkCheckBox(side, text=t("Filigrane sur toutes les pages"),
                         variable=self.watermark_var,
                         command=self._render).pack(anchor="w", padx=6, pady=4)
         self.watermark_entry = ctk.CTkEntry(side, placeholder_text="CONFIDENTIEL")
@@ -114,7 +117,7 @@ class PdfEditorTab(ctk.CTkFrame):
         self.watermark_entry.pack(fill="x", padx=6, pady=4)
         # L'aperçu suit la saisie : le filigrane se met à jour à chaque frappe.
         self.watermark_entry.bind("<KeyRelease>", lambda _e: self._render())
-        self.wm_color_menu = self._labeled_menu(side, "Couleur", list(COLORS), "Rouge",
+        self.wm_color_menu = self._labeled_menu(side, "Couleur", tl(COLORS), t("Rouge"),
                                                 command=lambda _v: self._render())
         self.wm_size_menu = self._labeled_menu(side, "Taille", ["40", "60", "80", "100"], "60",
                                                command=lambda _v: self._render())
@@ -126,7 +129,7 @@ class PdfEditorTab(ctk.CTkFrame):
         """Ajoute une ligne « libellé + menu déroulant » et retourne le menu."""
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=6, pady=3)
-        ctk.CTkLabel(row, text=label, width=95, anchor="w").pack(side="left")
+        ctk.CTkLabel(row, text=t(label), width=95, anchor="w").pack(side="left")
         menu = ctk.CTkOptionMenu(row, values=values, width=120, command=command)
         menu.set(default)
         menu.pack(side="right")
@@ -149,6 +152,7 @@ class PdfEditorTab(ctk.CTkFrame):
         self.canvas.bind("<Button-1>", self._on_press)
         self.canvas.bind("<B1-Motion>", self._on_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
+        register_drop_target(self.canvas, self._on_drop)
 
     def _build_bottom(self) -> None:
         bar = ctk.CTkFrame(self, fg_color="transparent")
@@ -164,10 +168,10 @@ class PdfEditorTab(ctk.CTkFrame):
         self.zoom_menu.set("100 %")
         self.zoom_menu.pack(side="left", padx=(16, 2))
 
-        ctk.CTkButton(bar, text="💾 Enregistrer sous...", command=self._save).pack(side="right", padx=4)
-        ctk.CTkButton(bar, text="🗑 Tout effacer", fg_color="#8a3333",
+        ctk.CTkButton(bar, text=t("💾 Enregistrer sous..."), command=self._save).pack(side="right", padx=4)
+        ctk.CTkButton(bar, text=t("🗑 Tout effacer"), fg_color="#8a3333",
                       command=self._clear_all).pack(side="right", padx=4)
-        ctk.CTkButton(bar, text="↶ Annuler", fg_color="#555",
+        ctk.CTkButton(bar, text=t("↶ Annuler"), fg_color="#555",
                       command=self._undo).pack(side="right", padx=4)
 
     # -------------------------------------------------------- lecture UI
@@ -177,15 +181,19 @@ class PdfEditorTab(ctk.CTkFrame):
         return float(value.replace("%", "").strip()) / 100.0
 
     def _current_style(self) -> Style:
-        """Construit un Style à partir de l'état courant du panneau latéral."""
-        fill_name = self.fill_menu.get()
+        """Construit un Style à partir de l'état courant du panneau latéral.
+
+        Les menus affichent des libellés traduits : chaque valeur lue est
+        ramenée à sa clé française avant d'interroger COLORS ou FONT_FAMILIES.
+        """
+        fill_name = untranslate(self.fill_menu.get())
         return Style(
             family=FONT_FAMILIES[self.family_menu.get()],
             size=float(self.size_menu.get()),
             bold=self.bold_var.get(),
             italic=self.italic_var.get(),
             underline=self.underline_var.get(),
-            color=COLORS[self.color_menu.get()],
+            color=COLORS[untranslate(self.color_menu.get())],
             fill=None if fill_name == NO_FILL else COLORS[fill_name],
             line_width=float(self.width_menu.get()),
             opacity=self._percent(self.opacity_menu.get()),
@@ -197,22 +205,36 @@ class PdfEditorTab(ctk.CTkFrame):
             enabled=self.watermark_var.get(),
             text=self.watermark_entry.get().strip() or "CONFIDENTIEL",
             size=float(self.wm_size_menu.get()),
-            color=COLORS[self.wm_color_menu.get()],
+            color=COLORS[untranslate(self.wm_color_menu.get())],
             opacity=self._percent(self.wm_opacity_menu.get()),
         )
 
     # ------------------------------------------------------------ fichier
+    def _on_drop(self, paths) -> None:
+        """Ouvre le premier PDF déposé : l'éditeur ne traite qu'un document."""
+        if not paths:
+            return
+        if len(paths) > 1:
+            self.logbox.log(t("Un seul PDF à la fois : le premier a été ouvert."))
+        self._load_pdf(paths[0])
+
     def _open_pdf(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
         if not path:
             return
+        self._load_pdf(path)
+
+    def _load_pdf(self, path: str) -> None:
+        """Charge un PDF dans l'éditeur, en remplaçant celui déjà ouvert."""
         try:
             editor = PdfEditor(path)
         except SecurityError as e:
-            self.logbox.log(f"⛔ {Path(path).name} refusé (sécurité) : {e}", "error")
+            self.logbox.log(t("⛔ {name} refusé (sécurité) : {error}").format(
+                name=Path(path).name, error=e), "error")
             return
         except Exception as e:
-            self.logbox.log(f"PDF illisible {Path(path).name} : {e}", "error")
+            self.logbox.log(t("PDF illisible {name} : {error}").format(
+                name=Path(path).name, error=e), "error")
             return
 
         if self.editor:
@@ -221,7 +243,7 @@ class PdfEditorTab(ctk.CTkFrame):
         self.annotations.clear()
         self.page_index = 0
         self.file_label.configure(text=f"{Path(path).name} — {editor.page_count} page(s)")
-        self.logbox.log(f"Chargé : {Path(path).name}", "success")
+        self.logbox.log(t("Chargé : {name}").format(name=Path(path).name), "success")
         self._render()
 
     def _change_page(self, delta: int) -> None:
@@ -237,7 +259,8 @@ class PdfEditorTab(ctk.CTkFrame):
         self._render()
 
     def _on_tool_change(self) -> None:
-        self.logbox.log(f"Outil : {dict(TOOL_LABELS)[self.tool_var.get()].strip()}")
+        self.logbox.log(t("Outil : {tool}").format(
+            tool=t(dict(TOOL_LABELS)[self.tool_var.get()]).strip()))
 
     # ------------------------------------------------------------- rendu
     def _render(self) -> None:
@@ -340,7 +363,7 @@ class PdfEditorTab(ctk.CTkFrame):
 
     def _on_press(self, event) -> None:
         if not self.editor:
-            self.logbox.log("Ouvrez d'abord un PDF.", "error")
+            self.logbox.log(t("Ouvrez d'abord un PDF."), "error")
             return
         x, y = self._canvas_point(event)
         if self.tool_var.get() == "text":
@@ -373,7 +396,7 @@ class PdfEditorTab(ctk.CTkFrame):
 
         # Un simple clic (sans glisser) ne définit aucune zone exploitable.
         if abs(x1 - x0) < 3 and abs(y1 - y0) < 3:
-            self.logbox.log("Glissez la souris pour définir la zone.", "error")
+            self.logbox.log(t("Glissez la souris pour définir la zone."), "error")
             return
 
         kind = self.tool_var.get()
@@ -383,19 +406,20 @@ class PdfEditorTab(ctk.CTkFrame):
         self.annotations.append(
             Annotation(kind, self.page_index, x0, y0, x1, y1, style=self._current_style())
         )
-        self.logbox.log(f"{dict(TOOL_LABELS)[kind].strip()} ajouté(e).", "success")
+        self.logbox.log(t("{tool} ajouté(e).").format(
+            tool=t(dict(TOOL_LABELS)[kind]).strip()), "success")
         self._render()
 
     def _add_text(self, x: float, y: float) -> None:
         """Demande le contenu puis pose le texte au point cliqué."""
-        dialog = ctk.CTkInputDialog(text="Texte à insérer :", title="Ajouter du texte")
+        dialog = ctk.CTkInputDialog(text=t("Texte à insérer :"), title=t("Ajouter du texte"))
         content = dialog.get_input()
         if not content:
             return
         self.annotations.append(
             Annotation("text", self.page_index, x, y, text=content, style=self._current_style())
         )
-        self.logbox.log("Texte ajouté.", "success")
+        self.logbox.log(t("Texte ajouté."), "success")
         self._render()
 
     def _add_signature(self, x0: float, y0: float, x1: float, y1: float) -> None:
@@ -408,33 +432,34 @@ class PdfEditorTab(ctk.CTkFrame):
             Annotation("signature", self.page_index, x0, y0, x1, y1,
                        image_path=dialog.result, style=self._current_style())
         )
-        self.logbox.log("Signature ajoutée.", "success")
+        self.logbox.log(t("Signature ajoutée."), "success")
         self._render()
 
     # ------------------------------------------------------------ actions
     def _undo(self) -> None:
         if not self.annotations:
-            self.logbox.log("Rien à annuler.", "error")
+            self.logbox.log(t("Rien à annuler."), "error")
             return
         self.annotations.pop()
-        self.logbox.log("Dernière annotation retirée.")
+        self.logbox.log(t("Dernière annotation retirée."))
         self._render()
 
     def _clear_all(self) -> None:
         if not self.annotations:
-            self.logbox.log("Aucune annotation à effacer.", "error")
+            self.logbox.log(t("Aucune annotation à effacer."), "error")
             return
         self.annotations.clear()
-        self.logbox.log("Toutes les annotations ont été retirées.")
+        self.logbox.log(t("Toutes les annotations ont été retirées."))
         self._render()
 
     def _save(self) -> None:
         if not self.editor:
-            self.logbox.log("Ouvrez d'abord un PDF.", "error")
+            self.logbox.log(t("Ouvrez d'abord un PDF."), "error")
             return
         watermark = self._current_watermark()
         if not self.annotations and not watermark.enabled:
-            self.logbox.log("Rien à enregistrer : ajoutez une annotation ou un filigrane.", "error")
+            self.logbox.log(
+                t("Rien à enregistrer : ajoutez une annotation ou un filigrane."), "error")
             return
         output = filedialog.asksaveasfilename(defaultextension=".pdf",
                                               filetypes=[("PDF", "*.pdf")])
@@ -446,10 +471,10 @@ class PdfEditorTab(ctk.CTkFrame):
         def worker() -> None:
             try:
                 path = self.editor.save(output, annotations, watermark)
-                self.logbox.log(f"PDF enregistré : {path}", "success")
+                self.logbox.log(t("PDF enregistré : {path}").format(path=path), "success")
             except SecurityError as e:
-                self.logbox.log(f"⛔ Sécurité : {e}", "error")
+                self.logbox.log(t("⛔ Sécurité : {error}").format(error=e), "error")
             except Exception as e:
-                self.logbox.log(f"Erreur d'enregistrement : {e}", "error")
+                self.logbox.log(t("Erreur d'enregistrement : {error}").format(error=e), "error")
 
         threading.Thread(target=worker, daemon=True).start()

@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from core.pdf_editor import COLORS
 from core.signature import render_signature
+from utils.i18n import t, tl, untranslate
 
 CANVAS_WIDTH = 520
 CANVAS_HEIGHT = 200
@@ -34,7 +35,7 @@ class SignatureDialog(ctk.CTkToplevel):
 
     # ------------------------------------------------------------------ UI
     def _build(self) -> None:
-        ctk.CTkLabel(self, text="Tracez votre signature avec la souris :",
+        ctk.CTkLabel(self, text=t("Tracez votre signature avec la souris :"),
                      anchor="w").pack(fill="x", padx=20, pady=(14, 6))
 
         self.canvas = ctk.CTkCanvas(self, width=CANVAS_WIDTH, height=CANVAS_HEIGHT,
@@ -47,24 +48,24 @@ class SignatureDialog(ctk.CTkToplevel):
 
         opts = ctk.CTkFrame(self, fg_color="transparent")
         opts.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(opts, text="Encre :").pack(side="left")
-        self.color_menu = ctk.CTkOptionMenu(opts, width=110, values=list(INK_COLORS))
-        self.color_menu.set("Noir")
+        ctk.CTkLabel(opts, text=t("Encre :")).pack(side="left")
+        self.color_menu = ctk.CTkOptionMenu(opts, width=110, values=tl(INK_COLORS))
+        self.color_menu.set(t("Noir"))
         self.color_menu.pack(side="left", padx=(6, 16))
-        ctk.CTkLabel(opts, text="Épaisseur :").pack(side="left")
+        ctk.CTkLabel(opts, text=t("Épaisseur :")).pack(side="left")
         self.width_menu = ctk.CTkOptionMenu(opts, width=70, values=["2", "3", "5", "8"])
         self.width_menu.set("3")
         self.width_menu.pack(side="left", padx=6)
 
         actions = ctk.CTkFrame(self, fg_color="transparent")
         actions.pack(fill="x", padx=20, pady=(4, 14))
-        ctk.CTkButton(actions, text="Effacer", width=90, fg_color="#555",
+        ctk.CTkButton(actions, text=t("Effacer"), width=90, fg_color="#555",
                       command=self._clear).pack(side="left", padx=4)
-        ctk.CTkButton(actions, text="Importer une image...", width=170,
+        ctk.CTkButton(actions, text=t("Importer une image..."), width=170,
                       command=self._import_image).pack(side="left", padx=4)
-        ctk.CTkButton(actions, text="Valider", width=90,
+        ctk.CTkButton(actions, text=t("Valider"), width=90,
                       command=self._validate).pack(side="right", padx=4)
-        ctk.CTkButton(actions, text="Annuler", width=90, fg_color="#8a3333",
+        ctk.CTkButton(actions, text=t("Annuler"), width=90, fg_color="#8a3333",
                       command=self._cancel).pack(side="right", padx=4)
 
         self.error_label = ctk.CTkLabel(self, text="", text_color="#e05555", anchor="w")
@@ -73,7 +74,7 @@ class SignatureDialog(ctk.CTkToplevel):
     # ------------------------------------------------------------- dessin
     def _ink(self) -> str:
         """Couleur d'encre courante, au format hexadécimal pour le canvas Tk."""
-        r, g, b = COLORS[self.color_menu.get()]
+        r, g, b = COLORS[untranslate(self.color_menu.get())]
         return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
     def _on_press(self, event) -> None:
@@ -103,7 +104,7 @@ class SignatureDialog(ctk.CTkToplevel):
     def _import_image(self) -> None:
         """Utilise une image existante (photo ou scan d'une signature)."""
         path = filedialog.askopenfilename(
-            title="Choisir une image de signature",
+            title=t("Choisir une image de signature"),
             filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.webp")],
         )
         if path:
@@ -113,7 +114,7 @@ class SignatureDialog(ctk.CTkToplevel):
     def _validate(self) -> None:
         """Convertit le tracé en PNG transparent et ferme la fenêtre."""
         try:
-            r, g, b = COLORS[self.color_menu.get()]
+            r, g, b = COLORS[untranslate(self.color_menu.get())]
             self.result = render_signature(
                 self._strokes, color=(r, g, b), width=int(self.width_menu.get())
             )

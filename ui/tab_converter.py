@@ -7,9 +7,30 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from core.file_converter import convert_file, detect_category
+from ui.dnd import register_drop_target
 from ui.widgets import LogBox
 from utils.config import TARGETS_BY_CATEGORY
+from utils.i18n import t, tl, untranslate
 from utils.security import SecurityError
+
+# Largeurs proposées pour le redimensionnement, et qualité de compression.
+# La valeur 0 signifie « ne rien changer » côté moteur.
+IMAGE_WIDTHS = {
+    "Taille d'origine": 0,
+    "3840 px (4K)": 3840,
+    "1920 px (Full HD)": 1920,
+    "1280 px (HD)": 1280,
+    "800 px (web)": 800,
+    "400 px (vignette)": 400,
+}
+
+IMAGE_QUALITIES = {
+    "Par défaut": 0,
+    "Maximale (95)": 95,
+    "Élevée (85)": 85,
+    "Moyenne (70)": 70,
+    "Réduite (50)": 50,
+}
 
 
 class ConverterTab(ctk.CTkFrame):
@@ -27,45 +48,63 @@ class ConverterTab(ctk.CTkFrame):
 
         top = ctk.CTkFrame(self, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
-        ctk.CTkButton(top, text="➕ Ajouter des fichiers", command=self._add_files).pack(side="left", padx=5)
-        ctk.CTkButton(top, text="🗑 Vider la liste", fg_color="#555",
+        ctk.CTkButton(top, text=t("➕ Ajouter des fichiers"), command=self._add_files).pack(side="left", padx=5)
+        ctk.CTkButton(top, text=t("🗑 Vider la liste"), fg_color="#555",
         command=self._clear).pack(side="left", padx=5)
 
         self.grid_rowconfigure(1, weight=1)
-        self.file_list = ctk.CTkScrollableFrame(self, label_text="Fichiers à convertir")
+        self.file_list = ctk.CTkScrollableFrame(
+            self, label_text=t("Fichiers à convertir  —  ou glissez-les ici"))
         self.file_list.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        register_drop_target(self.file_list, self._add_paths)
 
         opts = ctk.CTkFrame(self)
         opts.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         opts.grid_columnconfigure(2, weight=1)
-        ctk.CTkLabel(opts, text="Format cible :").grid(row=0, column=0, padx=8, pady=8)
+        ctk.CTkLabel(opts, text=t("Format cible :")).grid(row=0, column=0, padx=8, pady=8)
         self.target_menu = ctk.CTkOptionMenu(opts, values=["—"])
         self.target_menu.grid(row=0, column=1, padx=8, pady=8)
         self.dest_entry = ctk.CTkEntry(opts)
         self.dest_entry.insert(0, self.app.config_data["output_dir"])
         self.dest_entry.grid(row=0, column=2, sticky="ew", padx=8, pady=8)
-        ctk.CTkButton(opts, text="Parcourir...", width=100, command=self._browse)\
+        ctk.CTkButton(opts, text=t("Parcourir..."), width=100, command=self._browse)\
             .grid(row=0, column=3, padx=8, pady=8)
 
-        self.convert_btn = ctk.CTkButton(self, text="Convertir tout", command=self._convert_all)
-        self.convert_btn.grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        # Options propres aux images : sans effet sur les autres catégories.
+        images = ctk.CTkFrame(self)
+        images.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
+        ctk.CTkLabel(images, text=t("Images —  largeur max :")).grid(row=0, column=0, padx=(10, 4), pady=8)
+        self.width_menu = ctk.CTkOptionMenu(images, values=tl(IMAGE_WIDTHS), width=130)
+        self.width_menu.set(t("Taille d'origine"))
+        self.width_menu.grid(row=0, column=1, padx=4, pady=8)
+        ctk.CTkLabel(images, text=t("qualité :")).grid(row=0, column=2, padx=(16, 4), pady=8)
+        self.quality_menu = ctk.CTkOptionMenu(images, values=tl(IMAGE_QUALITIES), width=130)
+        self.quality_menu.set(t("Par défaut"))
+        self.quality_menu.grid(row=0, column=3, padx=4, pady=8)
+
+        self.convert_btn = ctk.CTkButton(self, text=t("Convertir tout"), command=self._convert_all)
+        self.convert_btn.grid(row=4, column=0, padx=10, pady=5, sticky="w")
 
         self.progress = ctk.CTkProgressBar(self)
         self.progress.set(0)
-        self.progress.grid(row=4, column=0, sticky="ew", padx=10, pady=5)
+        self.progress.grid(row=5, column=0, sticky="ew", padx=10, pady=5)
 
         self.logbox = LogBox(self)
-        self.logbox.grid(row=5, column=0, sticky="ew", padx=10, pady=(5, 10))
+        self.logbox.grid(row=6, column=0, sticky="ew", padx=10, pady=(5, 10))
 
     # ------------------------------------------------------------- handlers
     def _add_files(self) -> None:
-        paths = filedialog.askopenfilenames()
+        self._add_paths(filedialog.askopenfilenames())
+
+    def _add_paths(self, paths) -> None:
+        """Ajoute des fichiers à la liste, qu'ils viennent du sélecteur ou d'un dépôt."""
         for p in paths:
             if p in self.files:
                 continue
             cat = detect_category(p)
             if cat is None:
-                self.logbox.log(f"Format non supporté : {Path(p).name}", "error")
+                self.logbox.log(t("Format non supporté : {name}").format(name=Path(p).name),
+                                "error")
                 continue
             self.files.append(p)
             row = ctk.CTkFrame(self.file_list, fg_color="transparent")
@@ -85,7 +124,7 @@ class ConverterTab(ctk.CTkFrame):
         cats = {detect_category(f) for f in self.files if detect_category(f)}
         targets: list[str] = []
         for c in cats:
-            targets += [t for t in TARGETS_BY_CATEGORY[c] if t not in targets]
+            targets += [fmt for fmt in TARGETS_BY_CATEGORY[c] if fmt not in targets]
         if targets:
             self.target_menu.configure(values=targets)
             self.target_menu.set(targets[0])
@@ -98,28 +137,34 @@ class ConverterTab(ctk.CTkFrame):
 
     def _convert_all(self) -> None:
         if not self.files:
-            self.logbox.log("Aucun fichier à convertir.", "error")
+            self.logbox.log(t("Aucun fichier à convertir."), "error")
             return
         target = self.target_menu.get()
         if target == "—":
-            self.logbox.log("Choisissez un format cible.", "error")
+            self.logbox.log(t("Choisissez un format cible."), "error")
             return
         dest = self.dest_entry.get().strip()
         self.convert_btn.configure(state="disabled")
         files = list(self.files)
+        # Les menus affichent des libellés traduits : on repasse par la clé
+        # française avant toute recherche dans les tables de correspondance.
+        max_width = IMAGE_WIDTHS[untranslate(self.width_menu.get())]
+        quality = IMAGE_QUALITIES[untranslate(self.quality_menu.get())]
 
         def worker() -> None:
             total = len(files)
             for i, f in enumerate(files):
                 try:
-                    out = convert_file(f, target, dest)
+                    out = convert_file(f, target, dest, None, max_width, quality)
                     self.logbox.log(f"✔ {Path(f).name} → {Path(out).name}", "success")
                 except SecurityError as e:
-                    self.logbox.log(f"⛔ {Path(f).name} refusé (sécurité) : {e}", "error")
+                    self.logbox.log(
+                        t("⛔ {name} refusé (sécurité) : {error}").format(
+                            name=Path(f).name, error=e), "error")
                 except Exception as e:
                     self.logbox.log(f"✖ {Path(f).name} : {e}", "error")
                 self.after(0, lambda v=(i + 1) / total: self.progress.set(v))
-            self.logbox.log("Conversion terminée.", "success")
+            self.logbox.log(t("Conversion terminée."), "success")
             self.after(0, lambda: self.convert_btn.configure(state="normal"))
 
         threading.Thread(target=worker, daemon=True).start()
