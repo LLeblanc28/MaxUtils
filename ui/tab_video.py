@@ -6,7 +6,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from core.video_downloader import SUBTITLE_LANGUAGES, CancelledError, VideoDownloader
-from ui.widgets import LogBox
+from ui.widgets import LogBox, bind_memory
 from utils.config import MP3_BITRATES, MP4_QUALITIES
 from utils.helpers import format_duration, human_size
 from utils.i18n import t, tl, untranslate
@@ -33,7 +33,18 @@ class VideoTab(ctk.CTkFrame):
         self.url_entry = ctk.CTkEntry(url_frame, placeholder_text=t("Collez une URL (YouTube, TikTok, Vimeo...)"))
         self.url_entry.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
         ctk.CTkButton(url_frame, text=t("Détecter"), width=100, command=self._fetch_info)\
-            .grid(row=0, column=1, padx=8, pady=8)
+            .grid(row=0, column=1, padx=4, pady=8)
+        ctk.CTkButton(url_frame, text=t("➕ À la file"), width=110, command=self._enqueue)\
+            .grid(row=0, column=2, padx=(4, 8), pady=8)
+
+        # File d'attente : plusieurs URL sans rapport entre elles, téléchargées
+        # l'une après l'autre. À distinguer de l'option « playlist », qui suit
+        # une liste déjà constituée sur la plateforme.
+        self.queue: list[str] = []
+        self.queue_label = ctk.CTkLabel(url_frame, text="", anchor="w")
+        self.queue_label.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
+        self.clear_queue_btn = ctk.CTkButton(url_frame, text=t("Vider la file"), width=110,
+                                             fg_color="#555", command=self._clear_queue)
 
         self.info_label = ctk.CTkLabel(self, text="", anchor="w")
         self.info_label.grid(row=1, column=0, sticky="ew", padx=18)
@@ -64,6 +75,11 @@ class VideoTab(ctk.CTkFrame):
         self.subtitle_menu = ctk.CTkOptionMenu(extra, values=tl(SUBTITLE_LANGUAGES), width=110)
         self.subtitle_menu.set(t("Aucun"))
         self.subtitle_menu.grid(row=0, column=2, padx=4, pady=8)
+
+        for menu, key in ((self.quality_menu, "video.qualite"),
+                          (self.bitrate_menu, "video.bitrate"),
+                          (self.subtitle_menu, "video.soustitres")):
+            bind_memory(self.app, menu, key)
 
         ctk.CTkLabel(extra, text=t("Extrait de")).grid(row=0, column=3, padx=(16, 4), pady=8)
         self.start_entry = ctk.CTkEntry(extra, width=80, placeholder_text="1:20")
@@ -114,6 +130,42 @@ class VideoTab(ctk.CTkFrame):
             self.dest_entry.delete(0, "end")
             self.dest_entry.insert(0, folder)
 
+    # ------------------------------------------------------- file d'attente
+    def _enqueue(self) -> None:
+        """Ajoute l'URL saisie à la file et vide le champ pour la suivante."""
+        url = self.url_entry.get().strip()
+        if not url:
+            self.logbox.log(t("Veuillez saisir une URL."), "error")
+            return
+        try:
+            validate_url(url)
+        except SecurityError as e:
+            self.logbox.log(t("⛔ URL refusée : {error}").format(error=e), "error")
+            return
+        if url in self.queue:
+            self.logbox.log(t("Cette URL est déjà dans la file."), "error")
+            return
+
+        self.queue.append(url)
+        self.url_entry.delete(0, "end")
+        self._render_queue()
+        self.logbox.log(t("Ajouté à la file ({count} au total).").format(
+            count=len(self.queue)))
+
+    def _clear_queue(self) -> None:
+        self.queue.clear()
+        self._render_queue()
+
+    def _render_queue(self) -> None:
+        """Affiche l'état de la file, et masque le bouton quand elle est vide."""
+        if not self.queue:
+            self.queue_label.configure(text="")
+            self.clear_queue_btn.grid_forget()
+            return
+        self.queue_label.configure(
+            text=t("File d'attente : {count} URL").format(count=len(self.queue)))
+        self.clear_queue_btn.grid(row=1, column=1, columnspan=2, padx=8, pady=(0, 6))
+
     def _fetch_info(self) -> None:
         url = self.url_entry.get().strip()
         if not url:
@@ -140,12 +192,19 @@ class VideoTab(ctk.CTkFrame):
         threading.Thread(target=worker, daemon=True).start()
 
     def _start_download(self) -> None:
-        url = self.url_entry.get().strip()
-        if not url:
+        # La file est traitée en premier, puis l'URL restée dans le champ : on
+        # ne perd pas une adresse saisie mais pas encore mise à la file.
+        urls = list(self.queue)
+        typed = self.url_entry.get().strip()
+        if typed and typed not in urls:
+            urls.append(typed)
+
+        if not urls:
             self.logbox.log(t("Veuillez saisir une URL."), "error")
             return
         try:
-            validate_url(url)
+            for candidate in urls:
+                validate_url(candidate)
         except SecurityError as e:
             self.logbox.log(t("⛔ URL refusée : {error}").format(error=e), "error")
             return
@@ -172,22 +231,44 @@ class VideoTab(ctk.CTkFrame):
                 self.logbox.log(f"{d['percent']*100:.0f}% — {speed} — ETA {eta}")
 
         def worker() -> None:
+            total_urls = len(urls)
+            written = 0
             try:
-                paths = self.downloader.download(url, dest, fmt, quality, bitrate,
-                                                 on_progress, playlist, subtitles, start, end)
-                self.after(0, lambda: self.progress.set(1.0))
-                if len(paths) > 1:
-                    self.logbox.log(
-                        t("Terminé : {count} fichiers dans {folder}").format(
-                            count=len(paths), folder=dest), "success")
-                else:
-                    self.logbox.log(t("Terminé : {path}").format(path=paths[0]), "success")
+                for position, current in enumerate(urls, start=1):
+                    if total_urls > 1:
+                        self.logbox.log(t("[{position}/{total}] {url}").format(
+                            position=position, total=total_urls, url=current))
+                    try:
+                        paths = self.downloader.download(
+                            current, dest, fmt, quality, bitrate,
+                            on_progress, playlist, subtitles, start, end)
+                    except CancelledError:
+                        raise
+                    except SecurityError as e:
+                        self.logbox.log(t("⛔ Sécurité : {error}").format(error=e), "error")
+                        continue
+                    except Exception as e:
+                        # Une URL indisponible ne doit pas interrompre le reste
+                        # de la file : on la signale et on passe à la suivante.
+                        self.logbox.log(t("Erreur : {error}").format(error=e), "error")
+                        continue
+
+                    written += len(paths)
+                    self.after(0, lambda: self.progress.set(1.0))
+                    if len(paths) > 1:
+                        self.logbox.log(
+                            t("Terminé : {count} fichiers dans {folder}").format(
+                                count=len(paths), folder=dest), "success")
+                    else:
+                        self.logbox.log(t("Terminé : {path}").format(path=paths[0]),
+                                        "success")
+
+                if total_urls > 1:
+                    self.logbox.log(t("File terminée : {count} fichier(s).").format(
+                        count=written), "success")
+                    self.after(0, self._clear_queue)
             except CancelledError:
                 self.logbox.log(t("Téléchargement annulé."), "error")
-            except SecurityError as e:
-                self.logbox.log(t("⛔ Sécurité : {error}").format(error=e), "error")
-            except Exception as e:
-                self.logbox.log(t("Erreur : {error}").format(error=e), "error")
             finally:
                 self.after(0, self._reset_buttons)
 

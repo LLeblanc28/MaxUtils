@@ -13,3 +13,4 @@ bin/
 build/
 dist/
 *.spec.bak
+.claude

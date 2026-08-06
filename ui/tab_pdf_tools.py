@@ -12,9 +12,21 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
-from core.pdf_tools import COMPRESSION_LEVELS, compress_pdf, page_count, protect_pdf, split_pdf, unlock_pdf
+from core.pdf_tools import (
+    COMPRESSION_LEVELS,
+    NUMBER_FORMATS,
+    NUMBER_POSITIONS,
+    add_page_numbers,
+    compress_pdf,
+    extract_images,
+    extract_text,
+    page_count,
+    protect_pdf,
+    split_pdf,
+    unlock_pdf,
+)
 from ui.dnd import register_drop_target
-from ui.widgets import LogBox
+from ui.widgets import LogBox, bind_memory
 from utils.helpers import human_size
 from utils.i18n import t, tl, untranslate
 from utils.security import SecurityError
@@ -53,6 +65,8 @@ class PdfToolsTab(ctk.CTkFrame):
         body.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
         body.grid_columnconfigure(0, weight=1)
         self._build_split(body)
+        self._build_extract(body)
+        self._build_numbering(body)
         self._build_compress(body)
         self._build_protect(body)
 
@@ -87,6 +101,56 @@ class PdfToolsTab(ctk.CTkFrame):
         ctk.CTkButton(frame, text=t("Découper"), command=self._split)\
             .grid(row=3, column=0, padx=10, pady=10, sticky="w")
 
+    def _build_extract(self, parent) -> None:
+        frame = self._section(parent, "📤  Extraire le contenu")
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.grid(row=1, column=0, columnspan=3, sticky="w", padx=10, pady=10)
+        ctk.CTkButton(actions, text=t("Texte → .txt"), width=130,
+                      command=lambda: self._extract_text(".txt")).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(actions, text=t("Texte → .docx"), width=130,
+                      command=lambda: self._extract_text(".docx")).pack(side="left", padx=8)
+        ctk.CTkButton(actions, text=t("Images embarquées"), width=160,
+                      command=self._extract_images).pack(side="left", padx=8)
+
+    def _build_numbering(self, parent) -> None:
+        frame = self._section(parent, "🔢  Numéroter / en-tête / pied de page")
+
+        ctk.CTkLabel(frame, text=t("Position :"), anchor="w")\
+            .grid(row=1, column=0, padx=10, pady=6, sticky="w")
+        self.number_position = ctk.CTkOptionMenu(frame, values=tl(NUMBER_POSITIONS), width=150)
+        self.number_position.set(t("Bas centre"))
+        self.number_position.grid(row=1, column=1, sticky="w", padx=10, pady=6)
+
+        ctk.CTkLabel(frame, text=t("Format :"), anchor="w")\
+            .grid(row=2, column=0, padx=10, pady=6, sticky="w")
+        self.number_format = ctk.CTkOptionMenu(frame, values=list(NUMBER_FORMATS), width=180)
+        self.number_format.set("{n}")
+        self.number_format.grid(row=2, column=1, sticky="w", padx=10, pady=6)
+
+        ctk.CTkLabel(frame, text=t("Commencer à :"), anchor="w")\
+            .grid(row=3, column=0, padx=10, pady=6, sticky="w")
+        self.number_start = ctk.CTkEntry(frame, width=80, placeholder_text="1")
+        self.number_start.grid(row=3, column=1, sticky="w", padx=10, pady=6)
+
+        self.skip_first = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(frame, text=t("Ne pas numéroter la première page (couverture)"),
+                        variable=self.skip_first)\
+            .grid(row=4, column=0, columnspan=3, sticky="w", padx=10, pady=4)
+
+        ctk.CTkLabel(frame, text=t("En-tête :"), anchor="w")\
+            .grid(row=5, column=0, padx=10, pady=6, sticky="w")
+        self.header_entry = ctk.CTkEntry(frame, placeholder_text=t("laisser vide pour aucun"))
+        self.header_entry.grid(row=5, column=1, columnspan=2, sticky="ew", padx=10, pady=6)
+
+        ctk.CTkLabel(frame, text=t("Pied de page :"), anchor="w")\
+            .grid(row=6, column=0, padx=10, pady=6, sticky="w")
+        self.footer_entry = ctk.CTkEntry(frame, placeholder_text=t("laisser vide pour aucun"))
+        self.footer_entry.grid(row=6, column=1, columnspan=2, sticky="ew", padx=10, pady=6)
+
+        ctk.CTkButton(frame, text=t("Appliquer"), command=self._add_numbers)\
+            .grid(row=7, column=0, padx=10, pady=10, sticky="w")
+
     def _build_compress(self, parent) -> None:
         frame = self._section(parent, "🗜️  Compresser")
 
@@ -95,6 +159,7 @@ class PdfToolsTab(ctk.CTkFrame):
         self.compress_level.set(t("Normal"))
         self.compress_level.grid(row=1, column=1, sticky="w", padx=10, pady=6)
 
+        bind_memory(self.app, self.compress_level, "pdf.compression")
         ctk.CTkButton(frame, text=t("Compresser"), command=self._compress)\
             .grid(row=2, column=0, padx=10, pady=10, sticky="w")
         self.compress_result = ctk.CTkLabel(frame, text="", anchor="w")
@@ -198,6 +263,70 @@ class PdfToolsTab(ctk.CTkFrame):
                                  count=len(created), folder=folder)
                              if len(created) > 1
                              else t("PDF créé : {path}").format(path=created[0])),
+        )
+
+    def _extract_text(self, suffix: str) -> None:
+        if not self._require_source():
+            return
+        output = filedialog.asksaveasfilename(
+            defaultextension=suffix,
+            filetypes=[("Texte", "*.txt")] if suffix == ".txt" else [("Word", "*.docx")])
+        if not output:
+            return
+        source, password = self.source, self.source_password.get()
+
+        def describe(result) -> str:
+            path, length = result
+            if length == 0:
+                # Un PDF scanné n'a aucune couche de texte : livrer un fichier
+                # vide sans rien dire laisserait croire à un dysfonctionnement.
+                return t("Aucun texte trouvé : ce PDF est probablement un scan. "
+                         "Fichier créé mais vide : {path}").format(path=path)
+            return t("{count} caractères extraits : {path}").format(
+                count=length, path=path)
+
+        self._run(lambda: extract_text(source, output, password), describe)
+
+    def _extract_images(self) -> None:
+        if not self._require_source():
+            return
+        folder = filedialog.askdirectory(initialdir=self.app.config_data["output_dir"])
+        if not folder:
+            return
+        source, password = self.source, self.source_password.get()
+
+        self._run(
+            lambda: extract_images(source, folder, password),
+            lambda created: (t("{count} image(s) extraite(s) dans {folder}").format(
+                                 count=len(created), folder=folder)
+                             if created
+                             else t("Aucune image embarquée dans ce PDF.")),
+        )
+
+    def _add_numbers(self) -> None:
+        if not self._require_source():
+            return
+        raw_start = self.number_start.get().strip() or "1"
+        if not raw_start.isdigit():
+            self.logbox.log(t("Le numéro de départ doit être un nombre entier."), "error")
+            return
+        output = filedialog.asksaveasfilename(defaultextension=".pdf",
+                                              filetypes=[("PDF", "*.pdf")])
+        if not output:
+            return
+
+        source, password = self.source, self.source_password.get()
+        position = untranslate(self.number_position.get())
+        number_format = self.number_format.get()
+        start_at = int(raw_start)
+        skip_first = self.skip_first.get()
+        header, footer = self.header_entry.get().strip(), self.footer_entry.get().strip()
+
+        self._run(
+            lambda: add_page_numbers(source, output, position, number_format,
+                                     start_at, skip_first, header=header,
+                                     footer=footer, password=password),
+            lambda path: t("PDF numéroté : {path}").format(path=path),
         )
 
     def _compress(self) -> None:

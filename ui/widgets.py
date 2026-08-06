@@ -5,6 +5,39 @@ from datetime import datetime
 
 import customtkinter as ctk
 
+from utils.i18n import t, untranslate
+
+
+def bind_memory(app, menu, key: str) -> None:
+    """Restaure le dernier choix fait dans un menu, et retient les suivants.
+
+    La valeur est mémorisée sous son libellé français, jamais sous celui
+    affiché : sans cela, un réglage enregistré en anglais ne serait plus
+    reconnu après un passage en français.
+
+    Le `command` déjà posé sur le menu est conservé et appelé ensuite : la
+    mémorisation s'ajoute au comportement existant au lieu de le remplacer.
+    """
+    recall = getattr(app, "recall", None)
+    remember = getattr(app, "remember", None)
+    if recall is None or remember is None:
+        return  # objet d'application sans mémoire (doublure de test)
+
+    stored = recall(key, "")
+    if stored:
+        label = t(stored)
+        if label in menu.cget("values"):
+            menu.set(label)
+
+    previous = menu.cget("command")
+
+    def on_change(choice: str) -> None:
+        remember(key, untranslate(choice))
+        if previous:
+            previous(choice)
+
+    menu.configure(command=on_change)
+
 
 class LogBox(ctk.CTkFrame):
     """Zone de log colorée : rouge = erreur, vert = succès, gris = info.

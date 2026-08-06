@@ -112,6 +112,87 @@ def split_pdf(
         doc.close()
 
 
+# ---------------------------------------------------- organisation des pages
+def render_thumbnail(src: str, index: int, width: int = 130, password: str = "") -> bytes:
+    """Rend une page en PNG à petite taille, pour un aperçu en vignette.
+
+    Args:
+        src: PDF source.
+        index: index de page (0-based).
+        width: largeur souhaitée en pixels ; la hauteur suit les proportions.
+        password: mot de passe si le PDF est protégé.
+
+    Returns:
+        Les octets d'une image PNG.
+    """
+    import fitz
+
+    doc = _open_document(src, password)
+    try:
+        page = doc[index]
+        zoom = width / page.rect.width
+        return page.get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+    finally:
+        doc.close()
+
+
+def organize_pages(
+    src: str,
+    output_path: str,
+    pages: list[tuple[int, int]],
+    password: str = "",
+) -> str:
+    """Réécrit le document avec les pages choisies, dans l'ordre et l'orientation voulus.
+
+    Une seule primitive couvre les trois gestes : les pages absentes de la
+    liste sont supprimées, l'ordre de la liste devient l'ordre du document, et
+    chaque entrée porte sa propre rotation.
+
+    Args:
+        src: PDF source, jamais modifié.
+        output_path: chemin souhaité (suffixé si déjà pris).
+        pages: couples (index d'origine 0-based, rotation en degrés). Un même
+            index peut apparaître plusieurs fois pour dupliquer une page.
+        password: mot de passe si le PDF est protégé.
+
+    Returns:
+        Chemin du fichier généré.
+
+    Raises:
+        ValueError: liste vide, ou index de page hors bornes.
+    """
+    import fitz
+
+    if not pages:
+        raise ValueError("Le document doit conserver au moins une page.")
+
+    doc = _open_document(src, password)
+    try:
+        total = len(doc)
+        for index, _rotation in pages:
+            if not 0 <= index < total:
+                raise ValueError(f"Page inexistante : {index + 1} (1-{total})")
+
+        result = fitz.open()
+        try:
+            for index, rotation in pages:
+                result.insert_pdf(doc, from_page=index, to_page=index)
+                # La rotation s'ajoute à celle déjà portée par la page : une
+                # page déjà de travers dans le document d'origine doit pouvoir
+                # être redressée par un quart de tour supplémentaire.
+                page = result[-1]
+                page.set_rotation((page.rotation + rotation) % 360)
+
+            out = unique_path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            result.save(str(out))
+        finally:
+            result.close()
+    finally:
+        doc.close()
+    return str(out)
+
+
 # --------------------------------------------------------------- compression
 def compress_pdf(
     src: str,
@@ -147,6 +228,204 @@ def compress_pdf(
     finally:
         doc.close()
     return str(out), before, Path(out).stat().st_size
+
+
+# ---------------------------------------------------------------- extraction
+def extract_text(src: str, output_path: str, password: str = "") -> tuple[str, int]:
+    """Extrait le texte du PDF vers un fichier .txt ou .docx.
+
+    Args:
+        src: PDF source.
+        output_path: chemin de sortie ; l'extension (.txt ou .docx) détermine
+            le format produit.
+        password: mot de passe si le PDF est protégé.
+
+    Returns:
+        (chemin généré, nombre de caractères extraits). Un total nul signale
+        un PDF sans couche de texte — typiquement un scan, que seul un OCR
+        pourrait exploiter : l'appelant doit pouvoir le dire à l'utilisateur
+        plutôt que de livrer un fichier vide sans explication.
+
+    Raises:
+        ValueError: extension de sortie non supportée.
+    """
+    suffix = Path(output_path).suffix.lower()
+    if suffix not in (".txt", ".docx"):
+        raise ValueError(f"Format de sortie non supporté : {suffix} (.txt ou .docx)")
+
+    doc = _open_document(src, password)
+    try:
+        pages = [page.get_text() for page in doc]
+    finally:
+        doc.close()
+
+    out = unique_path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if suffix == ".txt":
+        # Séparateur explicite : sans lui, deux pages se retrouvent collées et
+        # l'on ne sait plus où l'une finit.
+        body = "\n\n".join(
+            f"--- Page {i + 1} ---\n{text}" for i, text in enumerate(pages))
+        out.write_text(body, encoding="utf-8")
+    else:
+        from docx import Document
+
+        document = Document()
+        for i, text in enumerate(pages):
+            document.add_heading(f"Page {i + 1}", level=2)
+            for paragraph in text.split("\n"):
+                document.add_paragraph(paragraph)
+        document.save(str(out))
+
+    return str(out), sum(len(text.strip()) for text in pages)
+
+
+def extract_images(src: str, output_dir: str, password: str = "",
+                   min_size: int = 64) -> list[str]:
+    """Extrait les images embarquées du PDF, dans leur format d'origine.
+
+    Ce sont bien les images stockées dans le document qui sont récupérées, et
+    non un rendu des pages : la qualité d'origine est préservée.
+
+    Args:
+        src: PDF source.
+        output_dir: dossier de destination.
+        password: mot de passe si le PDF est protégé.
+        min_size: taille minimale en octets ; en dessous, l'image est ignorée.
+            Les PDF contiennent souvent des pixels de calage d'un octet ou
+            deux, sans intérêt pour l'utilisateur.
+
+    Returns:
+        Chemins des images extraites, dans l'ordre des pages.
+    """
+    doc = _open_document(src, password)
+    stem = Path(src).stem
+    created: list[str] = []
+    seen: set[int] = set()
+
+    try:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        for number, page in enumerate(doc, start=1):
+            for info in page.get_images(full=True):
+                xref = info[0]
+                # Une même image peut être posée sur plusieurs pages : on ne
+                # l'extrait qu'une fois.
+                if xref in seen:
+                    continue
+                seen.add(xref)
+
+                data = doc.extract_image(xref)
+                if len(data["image"]) < min_size:
+                    continue
+                out = unique_path(
+                    Path(output_dir) / f"{stem}_p{number:02d}_{xref}.{data['ext']}")
+                out.write_bytes(data["image"])
+                created.append(str(out))
+    finally:
+        doc.close()
+    return created
+
+
+# ------------------------------------------------------- numérotation, entêtes
+# Position du numéro de page : (alignement horizontal, en bas ou en haut).
+NUMBER_POSITIONS = {
+    "Bas centre": ("center", "bottom"),
+    "Bas droite": ("right", "bottom"),
+    "Bas gauche": ("left", "bottom"),
+    "Haut centre": ("center", "top"),
+    "Haut droite": ("right", "top"),
+    "Haut gauche": ("left", "top"),
+}
+
+# Modèles de numérotation. {n} = numéro courant, {total} = nombre de pages.
+NUMBER_FORMATS = ("{n}", "- {n} -", "Page {n}", "{n} / {total}", "Page {n} sur {total}")
+
+MARGIN = 28.0  # distance au bord, en points PDF
+
+
+def add_page_numbers(
+    src: str,
+    output_path: str,
+    position: str = "Bas centre",
+    number_format: str = "{n}",
+    start_at: int = 1,
+    skip_first: bool = False,
+    font_size: float = 10.0,
+    header: str = "",
+    footer: str = "",
+    password: str = "",
+) -> str:
+    """Ajoute une numérotation, et éventuellement un en-tête et un pied de page.
+
+    Args:
+        src: PDF source.
+        output_path: chemin souhaité (suffixé si déjà pris).
+        position: une clé de NUMBER_POSITIONS.
+        number_format: modèle acceptant {n} et {total}. Vide = pas de numéro,
+            ce qui permet de ne poser qu'un en-tête ou qu'un pied de page.
+        start_at: numéro attribué à la première page numérotée.
+        skip_first: laisse la première page sans numéro (page de garde).
+        font_size: taille du texte ajouté.
+        header, footer: textes libres, respectivement en haut et en bas.
+        password: mot de passe si le PDF est protégé.
+
+    Returns:
+        Chemin du fichier généré.
+
+    Raises:
+        ValueError: position inconnue, ou modèle de numérotation invalide.
+    """
+    import fitz
+
+    if position not in NUMBER_POSITIONS:
+        raise ValueError(f"Position inconnue : {position}")
+
+    align, vertical = NUMBER_POSITIONS[position]
+    doc = _open_document(src, password)
+    try:
+        total = len(doc)
+
+        def place(page, text: str, at_top: bool, alignment: str) -> None:
+            """Écrit un texte sur une page, aligné et à distance du bord."""
+            width = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
+            if alignment == "center":
+                x = (page.rect.width - width) / 2
+            elif alignment == "right":
+                x = page.rect.width - MARGIN - width
+            else:
+                x = MARGIN
+            y = MARGIN if at_top else page.rect.height - MARGIN + font_size / 2
+            page.insert_text(fitz.Point(x, y), text,
+                             fontname="helv", fontsize=font_size, color=(0, 0, 0))
+
+        for index, page in enumerate(doc):
+            if header:
+                place(page, header, True, "center")
+            if footer:
+                place(page, footer, False, "left" if align != "left" else "right")
+
+            if not number_format or (skip_first and index == 0):
+                continue
+            # La numérotation suit la position dans le document, mais démarre
+            # au numéro choisi : un rapport peut commencer à « 1 » après une
+            # page de garde non numérotée.
+            number = start_at + index - (1 if skip_first else 0)
+            try:
+                text = number_format.format(n=number, total=total)
+            except (KeyError, IndexError) as e:
+                raise ValueError(
+                    f"Modèle de numérotation invalide : {number_format} "
+                    "(champs acceptés : {n} et {total})"
+                ) from e
+            place(page, text, vertical == "top", align)
+
+        out = unique_path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(out))
+    finally:
+        doc.close()
+    return str(out)
 
 
 # ---------------------------------------------------------------- protection

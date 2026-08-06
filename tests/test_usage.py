@@ -1,3 +1,12 @@
+"""Tests fonctionnels d'ensemble : helpers, configuration, conversion, fusion
+et téléchargement.
+
+Nommé selon la convention `test_*.py` comme tous les autres fichiers de tests.
+Il s'appelait auparavant `usage_test.py`, à la racine : ce suffixe le rendait
+invisible aux découvertes utilisant le préfixe standard, et la couverture
+paraissait alors incomplète alors que les tests existaient bel et bien.
+"""
+
 import json
 import sys
 import tempfile
@@ -5,6 +14,8 @@ import types
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     import yt_dlp  # noqa: F401

@@ -21,7 +21,16 @@ DEFAULT_CONFIG = {
     "theme": "dark",              # dark | light
     "language": "fr",             # fr | en
     "output_dir": str(Path.home() / "Downloads"),
+    # Derniers réglages retenus par onglet, sous forme de chaînes simples
+    # (libellés de menus, cases cochées). Purement confortable : une valeur
+    # absente ou devenue invalide se remplace par le défaut de l'onglet.
+    "last_used": {},
 }
+
+# Un réglage mémorisé ne doit jamais faire enfler indéfiniment le fichier de
+# configuration, ni y faire entrer des données arbitraires.
+MAX_REMEMBERED_KEYS = 60
+MAX_REMEMBERED_LENGTH = 120
 
 VALID_THEMES = {"dark", "light"}
 VALID_LANGUAGES = {"fr", "en"}
@@ -87,7 +96,29 @@ def _validate_config(data: dict) -> dict:
     output_dir = data.get("output_dir")
     if isinstance(output_dir, str) and output_dir.strip():
         result["output_dir"] = output_dir
+    result["last_used"] = _validate_last_used(data.get("last_used"))
     return result
+
+
+def _validate_last_used(data) -> dict:
+    """Ne retient que des couples chaîne → chaîne, bornés en nombre et en taille.
+
+    Ces valeurs sont réinjectées dans des menus au démarrage : un fichier de
+    configuration modifié à la main ne doit pas pouvoir y glisser des objets
+    arbitraires ni faire enfler le fichier sans limite.
+    """
+    if not isinstance(data, dict):
+        return {}
+    clean: dict[str, str] = {}
+    for key, value in data.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        if len(key) > MAX_REMEMBERED_LENGTH or len(value) > MAX_REMEMBERED_LENGTH:
+            continue
+        clean[key] = value
+        if len(clean) >= MAX_REMEMBERED_KEYS:
+            break
+    return clean
 
 
 def load_config() -> dict:

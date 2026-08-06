@@ -182,6 +182,44 @@ class TestConfigValidationM04(unittest.TestCase):
         result = _validate_config("not a dict")
         self.assertEqual(result["theme"], "dark")
 
+    def test_remembered_settings_are_kept_when_they_are_plain_strings(self):
+        result = _validate_config({"last_used": {"conv.largeur": "800 px (web)"}})
+        self.assertEqual(result["last_used"], {"conv.largeur": "800 px (web)"})
+
+    def test_non_string_remembered_values_are_dropped(self):
+        # Ces valeurs sont réinjectées dans des menus : un objet arbitraire
+        # glissé dans le fichier de configuration ne doit pas y arriver.
+        result = _validate_config({"last_used": {
+            "ok": "valeur",
+            "liste": ["a", "b"],
+            "nombre": 42,
+            7: "cle non textuelle",
+        }})
+        self.assertEqual(result["last_used"], {"ok": "valeur"})
+
+    def test_oversized_remembered_entries_are_dropped(self):
+        from utils.config import MAX_REMEMBERED_LENGTH
+
+        result = _validate_config({"last_used": {
+            "court": "ok",
+            "long": "x" * (MAX_REMEMBERED_LENGTH + 1),
+            "x" * (MAX_REMEMBERED_LENGTH + 1): "cle trop longue",
+        }})
+        self.assertEqual(result["last_used"], {"court": "ok"})
+
+    def test_the_number_of_remembered_entries_is_capped(self):
+        from utils.config import MAX_REMEMBERED_KEYS
+
+        flooded = {f"cle{i}": "v" for i in range(MAX_REMEMBERED_KEYS * 3)}
+        result = _validate_config({"last_used": flooded})
+        self.assertLessEqual(len(result["last_used"]), MAX_REMEMBERED_KEYS)
+
+    def test_a_non_dict_last_used_falls_back_to_empty(self):
+        self.assertEqual(_validate_config({"last_used": "n'importe quoi"})["last_used"], {})
+
+    def test_missing_last_used_gives_an_empty_dict(self):
+        self.assertEqual(_validate_config({"theme": "dark"})["last_used"], {})
+
 
 class TestPdfEncryptedH02(unittest.TestCase):
     def _build_pdf(self, path: Path):
