@@ -55,7 +55,14 @@ def detect_category(path: str) -> str | None:
     return None
 
 
-def convert_file(src: str, target_fmt: str, output_dir: str, cb: ProgressCb = None) -> str:
+def convert_file(
+    src: str,
+    target_fmt: str,
+    output_dir: str,
+    cb: ProgressCb = None,
+    max_width: int = 0,
+    quality: int = 0,
+) -> str:
     """Convertit un fichier vers le format cible, en routant selon la catégorie.
 
     Args:
@@ -63,6 +70,9 @@ def convert_file(src: str, target_fmt: str, output_dir: str, cb: ProgressCb = No
         target_fmt: format cible (ex: "PNG", "MP4", "PDF", "EXTRAIRE").
         output_dir: dossier de sortie.
         cb: callback (progression 0-1, message).
+        max_width: images uniquement — largeur maximale en pixels, 0 = taille
+            d'origine. La hauteur suit pour conserver les proportions.
+        quality: images uniquement — qualité JPEG/WEBP de 1 à 95, 0 = défaut.
 
     Returns:
         Chemin du fichier (ou dossier pour extraction) généré.
@@ -76,7 +86,7 @@ def convert_file(src: str, target_fmt: str, output_dir: str, cb: ProgressCb = No
     category = detect_category(src)
     target = target_fmt.lower()
     if category == "image":
-        return _convert_image(src, target, output_dir)
+        return _convert_image(src, target, output_dir, max_width, quality)
     if category in ("video", "audio"):
         return _convert_media(src, target, output_dir, cb)
     if category == "document":
@@ -91,8 +101,14 @@ def convert_file(src: str, target_fmt: str, output_dir: str, cb: ProgressCb = No
 
 
 # --------------------------------------------------------------------- images
-def _convert_image(src: str, target: str, output_dir: str) -> str:
-    """Convertit une image via Pillow (PDF inclus). Gère HEIC si pillow-heif présent."""
+def _convert_image(src: str, target: str, output_dir: str,
+                   max_width: int = 0, quality: int = 0) -> str:
+    """Convertit une image via Pillow (PDF inclus). Gère HEIC si pillow-heif présent.
+
+    Redimensionne si `max_width` est fourni, et applique `quality` aux formats
+    qui la gèrent (JPEG, WEBP). Une image déjà plus étroite que `max_width`
+    n'est jamais agrandie : on ne fabrique pas de détail qui n'existe pas.
+    """
     if Path(src).suffix.lower() == ".heic":
         try:
             from pillow_heif import register_heif_opener
@@ -104,10 +120,18 @@ def _convert_image(src: str, target: str, output_dir: str) -> str:
     ext = "jpg" if target == "jpg" else target
     out = unique_path(Path(output_dir) / f"{Path(src).stem}.{ext}")
 
+    if max_width and img.width > max_width:
+        height = max(1, round(img.height * max_width / img.width))
+        img = img.resize((max_width, height), Image.LANCZOS)
+
     if target in ("jpg", "pdf") and img.mode in ("RGBA", "P", "LA"):
         img = img.convert("RGB")
     save_fmt = {"jpg": "JPEG", "tiff": "TIFF"}.get(target, target.upper())
-    img.save(out, format=save_fmt)
+
+    save_options: dict = {}
+    if quality and save_fmt in ("JPEG", "WEBP"):
+        save_options["quality"] = quality
+    img.save(out, format=save_fmt, **save_options)
     return str(out)
 
 

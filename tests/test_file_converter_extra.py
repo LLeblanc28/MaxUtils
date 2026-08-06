@@ -47,6 +47,75 @@ class TestConvertImageHeicAndRgba(unittest.TestCase):
                 self.assertEqual(result.mode, "RGB")
 
 
+class TestImageResizeAndQuality(unittest.TestCase):
+    def test_wide_image_is_scaled_down_keeping_proportions(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "grande.png"
+            Image.new("RGB", (2000, 1000), "red").save(src)
+            out = convert_file(str(src), "PNG", tmp_dir, max_width=800)
+            with Image.open(out) as result:
+                self.assertEqual(result.width, 800)
+                self.assertEqual(result.height, 400)   # ratio 2:1 conservé
+
+    def test_narrow_image_is_never_enlarged(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "petite.png"
+            Image.new("RGB", (300, 200), "blue").save(src)
+            out = convert_file(str(src), "PNG", tmp_dir, max_width=1920)
+            with Image.open(out) as result:
+                self.assertEqual(result.size, (300, 200))
+
+    def test_extreme_ratio_keeps_at_least_one_pixel_of_height(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "bandeau.png"
+            Image.new("RGB", (4000, 3), "green").save(src)
+            out = convert_file(str(src), "PNG", tmp_dir, max_width=100)
+            with Image.open(out) as result:
+                self.assertEqual(result.width, 100)
+                self.assertGreaterEqual(result.height, 1)
+
+    def test_lower_quality_produces_a_smaller_jpeg(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "photo.png"
+            # Un dégradé se compresse différemment selon la qualité, contrairement
+            # à un aplat uni qui donnerait des tailles quasi identiques.
+            image = Image.new("RGB", (400, 400))
+            image.putdata([(x % 256, y % 256, (x * y) % 256)
+                           for y in range(400) for x in range(400)])
+            image.save(src)
+
+            fort = convert_file(str(src), "JPG", tmp_dir, quality=95)
+            faible = convert_file(str(src), "JPG", tmp_dir, quality=40)
+            self.assertLess(Path(faible).stat().st_size, Path(fort).stat().st_size)
+
+    def test_quality_is_ignored_by_formats_that_do_not_support_it(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "image.png"
+            Image.new("RGB", (50, 50), "purple").save(src)
+            out = convert_file(str(src), "BMP", tmp_dir, quality=50)
+            self.assertTrue(Path(out).exists())
+
+    def test_resize_and_quality_combined_on_webp(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "image.png"
+            Image.new("RGB", (1200, 600), "orange").save(src)
+            out = convert_file(str(src), "WEBP", tmp_dir, max_width=300, quality=70)
+            with Image.open(out) as result:
+                self.assertEqual(result.width, 300)
+
+
 class TestConvertMedia(unittest.TestCase):
     def test_convert_media_mp3_success_with_progress_callback(self):
         calls = []
