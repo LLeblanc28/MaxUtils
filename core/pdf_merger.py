@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from pypdf import PdfReader, PdfWriter
+from pypdf.errors import DependencyError
 
 from utils.helpers import parse_page_ranges, unique_path
 from utils.security import check_file_size
@@ -24,7 +25,17 @@ def _open_reader(path: str) -> PdfReader:
         ValueError: PDF protégé par un mot de passe non vide.
     """
     check_file_size(path)
-    reader = PdfReader(path)
+    try:
+        reader = PdfReader(path)
+    except DependencyError as e:
+        # pypdf ne sait lire l'AES-256 qu'avec le paquet `cryptography`. Un PDF
+        # protégé par l'onglet « Outils PDF » tombe dans ce cas : sans ce
+        # rattrapage, l'utilisateur verrait une erreur de dépendance obscure
+        # au lieu de comprendre que son fichier est simplement verrouillé.
+        raise ValueError(
+            f"Le PDF « {Path(path).name} » est protégé par un chiffrement fort. "
+            "Déverrouillez-le d'abord depuis l'onglet « Outils PDF »."
+        ) from e
     if reader.is_encrypted:
         result = reader.decrypt("")
         if not result:
